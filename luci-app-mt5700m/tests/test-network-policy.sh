@@ -236,11 +236,15 @@ export FAKE_UCI_LOG="${UCI_LOG}"
 export FAKE_COMMAND_LOG="${COMMAND_LOG}"
 export PATH="${BIN}:${PATH}"
 
-MT5700M_MANAGER_LOCK="${FIXTURE}/manager.lock" \
-MT5700M_MANAGER_STATE="${FIXTURE}/state" \
-MT5700M_MANAGER_LOG="${FIXTURE}/manager.log" \
-MT5700M_USB_HELPER="${USB_HELPER}" \
-	sh "${MANAGER}" sync
+run_manager_sync() {
+	MT5700M_MANAGER_LOCK="${FIXTURE}/manager.lock" \
+	MT5700M_MANAGER_STATE="${FIXTURE}/state" \
+	MT5700M_MANAGER_LOG="${FIXTURE}/manager.log" \
+	MT5700M_USB_HELPER="${USB_HELPER}" \
+		sh "${MANAGER}" sync
+}
+
+run_manager_sync
 
 [ "$(uci -q get network.Modem_v4.device)" = 'eth1' ] ||
 	fail 'the existing IPv4 interface was not reused'
@@ -248,8 +252,12 @@ MT5700M_USB_HELPER="${USB_HELPER}" \
 	fail 'the existing IPv6 interface was not reused'
 [ "$(uci -q get network.Modem_v6.auto)" = '1' ] ||
 	fail 'IPv6 autostart was not enabled when ipv6_owner=wan'
-[ "$(uci -q get network.Modem_v6.defaultroute)" = '0' ] ||
-	fail 'wan_first unexpectedly installed a modem IPv6 default route'
+if uci -q get network.Modem_v4.defaultroute >/dev/null 2>&1; then
+	fail 'the manager hard-coded a default-route policy on the reused IPv4 interface'
+fi
+if uci -q get network.Modem_v6.defaultroute >/dev/null 2>&1; then
+	fail 'the manager hard-coded a default-route policy on the reused IPv6 interface'
+fi
 [ "$(uci -q get network.Modem_v4.peerdns)" = '0' ] ||
 	fail 'the reused IPv4 interface lost its existing DNS policy'
 if uci -q get network.Modem_v4.ifname >/dev/null 2>&1; then
@@ -281,13 +289,21 @@ case " ${firewall_networks} " in
 	*) fail 'the reused IPv6 interface was not added to the wan firewall zone' ;;
 esac
 
+# Reused interfaces belong to the user. Once they explicitly choose a route
+# policy, repeated manager reconciliation must not replace that choice.
+uci -q set network.Modem_v4.defaultroute=0
+uci -q set network.Modem_v6.defaultroute=1
+for pass in 1 2; do
+	run_manager_sync
+	[ "$(uci -q get network.Modem_v4.defaultroute)" = '0' ] ||
+		fail "sync pass ${pass} overwrote the reused IPv4 default-route policy"
+	[ "$(uci -q get network.Modem_v6.defaultroute)" = '1' ] ||
+		fail "sync pass ${pass} overwrote the reused IPv6 default-route policy"
+done
+
 uci -q set mt5700m.connection.pdp_type=ip
 : > "${COMMAND_LOG}"
-MT5700M_MANAGER_LOCK="${FIXTURE}/manager.lock" \
-MT5700M_MANAGER_STATE="${FIXTURE}/state" \
-MT5700M_MANAGER_LOG="${FIXTURE}/manager.log" \
-MT5700M_USB_HELPER="${USB_HELPER}" \
-	sh "${MANAGER}" sync
+run_manager_sync
 grep -qx 'ifdown Modem_v6' "${COMMAND_LOG}" ||
 	fail 'IPv4-only mode did not stop the reused IPv6 interface'
 uci -q get network.Modem_v6 >/dev/null 2>&1 ||
@@ -314,11 +330,7 @@ firewall.wan=zone
 firewall.wan.name=wan
 firewall.wan.network=Modem_v4 Modem_v6 stale_v6
 EOF
-MT5700M_MANAGER_LOCK="${FIXTURE}/manager.lock" \
-MT5700M_MANAGER_STATE="${FIXTURE}/state" \
-MT5700M_MANAGER_LOG="${FIXTURE}/manager.log" \
-MT5700M_USB_HELPER="${USB_HELPER}" \
-	sh "${MANAGER}" sync
+run_manager_sync
 [ "$(uci -q get network.Modem_v6.device)" = '@Modem_v4' ] ||
 	fail 'a directly bound user IPv6 interface was not preferred and normalized'
 if uci -q get network.stale_v6 >/dev/null 2>&1; then
@@ -327,5 +339,67 @@ fi
 case " $(uci -q get firewall.wan.network) " in
 	*" stale_v6 "*) fail 'the removed IPv6 sibling remains in the wan firewall zone' ;;
 esac
+
+# Default-route policy remains editable even when the manager had to create the
+# interface. The manager controls connection topology and route metric, but it
+# must not add or continuously reconcile the defaultroute option.
+cat > "${UCI_DB}" <<'EOF'
+network.loopback=interface
+network.loopback.device=lo
+network.loopback.proto=static
+mt5700m.connection=connection
+mt5700m.connection.enabled=1
+mt5700m.connection.pdp_type=ipv4v6
+mt5700m.connection.metric=50
+h5000m_netmode.settings=settings
+h5000m_netmode.settings.mode=modem_first
+firewall.wan=zone
+firewall.wan.name=wan
+EOF
+rm -f "${FIXTURE}/state/interfaces"
+run_manager_sync
+[ "$(uci -q get network.MT5700M.managed_by)" = 'mt5700m' ] ||
+	fail 'a newly created IPv4 interface was not marked as app-owned'
+[ "$(uci -q get network.MT5700Mv6.managed_by)" = 'mt5700m' ] ||
+	fail 'a newly created IPv6 interface was not marked as app-owned'
+if uci -q get network.MT5700M.defaultroute >/dev/null 2>&1; then
+	fail 'the manager hard-coded a default-route policy on its IPv4 interface'
+fi
+if uci -q get network.MT5700Mv6.defaultroute >/dev/null 2>&1; then
+	fail 'the manager hard-coded a default-route policy on its IPv6 interface'
+fi
+[ "$(uci -q get network.MT5700Mv6.metric)" = '50' ] ||
+	fail 'the app-owned IPv6 interface did not apply the configured route metric'
+
+uci -q set network.MT5700M.defaultroute=0
+uci -q set network.MT5700Mv6.defaultroute=1
+uci -q set h5000m_netmode.settings.mode=wan_first
+uci -q set mt5700m.connection.metric=70
+for pass in 1 2; do
+	run_manager_sync
+	[ "$(uci -q get network.MT5700M.defaultroute)" = '0' ] ||
+		fail "sync pass ${pass} overwrote the app-owned IPv4 default-route policy"
+	[ "$(uci -q get network.MT5700Mv6.defaultroute)" = '1' ] ||
+		fail "sync pass ${pass} overwrote the app-owned IPv6 default-route policy"
+done
+[ "$(uci -q get network.MT5700Mv6.metric)" = '70' ] ||
+	fail 'the app-owned IPv6 interface did not apply the configured route metric update'
+
+# An IPv4-only interval must stop, not delete, an existing IPv6 section. This
+# preserves its route policy when dual-stack operation is enabled again.
+uci -q set mt5700m.connection.pdp_type=ip
+: > "${COMMAND_LOG}"
+run_manager_sync
+uci -q get network.MT5700Mv6 >/dev/null 2>&1 ||
+	fail 'IPv4-only mode deleted the app-owned IPv6 interface'
+[ "$(uci -q get network.MT5700Mv6.defaultroute)" = '1' ] ||
+	fail 'IPv4-only mode lost the app-owned IPv6 default-route policy'
+grep -qx 'ifdown MT5700Mv6' "${COMMAND_LOG}" ||
+	fail 'IPv4-only mode did not stop the app-owned IPv6 interface'
+
+uci -q set mt5700m.connection.pdp_type=ipv4v6
+run_manager_sync
+[ "$(uci -q get network.MT5700Mv6.defaultroute)" = '1' ] ||
+	fail 'dual-stack restore lost the app-owned IPv6 default-route policy'
 
 echo 'network policy tests passed'

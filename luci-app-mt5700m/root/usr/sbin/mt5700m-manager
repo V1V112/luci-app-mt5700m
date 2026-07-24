@@ -349,22 +349,14 @@ cleanup_managed_duplicates() {
 	done
 }
 
-effective_policy() {
-	local mode configured_metric
-	mode="$(uci -q get h5000m_netmode.settings.mode 2>/dev/null || true)"
+connection_defaults() {
+	local configured_metric
 	configured_metric="$(config_value metric 50)"
 	case "${configured_metric}" in ''|*[!0-9]*) configured_metric=50 ;; esac
 
-	case "${mode}" in
-		modem_first|modem_only) EFFECTIVE_METRIC=10 ;;
-		wan_first|wan_only) EFFECTIVE_METRIC=50 ;;
-		*) EFFECTIVE_METRIC="${configured_metric}" ;;
-	esac
-	case "${mode}" in
-		wan_only) IPV4_DEFAULT=0; IPV6_DEFAULT=0 ;;
-		modem_first|modem_only) IPV4_DEFAULT=1; IPV6_DEFAULT=1 ;;
-		*) IPV4_DEFAULT=1; IPV6_DEFAULT=0 ;;
-	esac
+	# Routing policy belongs to /etc/config/network or a dedicated multi-WAN
+	# manager. Do not infer hidden ownership from another application's mode.
+	EFFECTIVE_METRIC="${configured_metric}"
 	# IPv6 availability controls autostart; route ownership does not.
 	IPV6_AUTO=1
 }
@@ -375,7 +367,7 @@ ensure_network() {
 	FIREWALL_CHANGED=0
 	pdp_type="$(config_value pdp_type ipv4v6)"
 	case "${pdp_type}" in ip|ipv6|ipv4v6) ;; *) pdp_type='ipv4v6' ;; esac
-	effective_policy
+	connection_defaults
 	resolve_network_interfaces "${netdev}"
 	cleanup_managed_duplicates "${netdev}"
 
@@ -386,7 +378,8 @@ ensure_network() {
 	set_if_changed "network.${INTERFACE}.device" "${netdev}"
 	[ "${interface_managed}" != 'mt5700m' ] || set_if_changed "network.${INTERFACE}.ifname" "${netdev}"
 	set_if_changed "network.${INTERFACE}.metric" "${EFFECTIVE_METRIC}"
-	set_if_changed "network.${INTERFACE}.defaultroute" "${IPV4_DEFAULT}"
+	# Default-route ownership stays in /etc/config/network. In particular, do
+	# not undo an administrator or multi-WAN manager every monitor cycle.
 	set_if_changed "network.${INTERFACE}.norelease" '1'
 	delete_if_present "network.${INTERFACE}.modem_config"
 	if [ "${pdp_type}" = 'ipv6' ]; then
@@ -410,12 +403,9 @@ ensure_network() {
 		fi
 	fi
 
-	if [ "${pdp_type}" = 'ip' ]; then
-		if [ "$(uci -q get "network.${INTERFACE6}.managed_by" 2>/dev/null || true)" = 'mt5700m' ]; then
-			remove_firewall_network "${INTERFACE6}"
-			delete_if_present "network.${INTERFACE6}"
-		fi
-	else
+	# In IPv4-only mode, keep an existing IPv6 section and its administrator-
+	# owned options intact; the runtime path below brings the interface down.
+	if [ "${pdp_type}" != 'ip' ]; then
 		interface_type="$(uci -q get "network.${INTERFACE6}" 2>/dev/null || true)"
 		set_if_changed "network.${INTERFACE6}" 'interface'
 		[ -n "${interface_type}" ] || set_if_changed "network.${INTERFACE6}.managed_by" 'mt5700m'
@@ -424,7 +414,6 @@ ensure_network() {
 		set_if_changed "network.${INTERFACE6}.device" "@${INTERFACE}"
 		[ "${interface_managed}" != 'mt5700m' ] || set_if_changed "network.${INTERFACE6}.ifname" "@${INTERFACE}"
 		set_if_changed "network.${INTERFACE6}.metric" "${EFFECTIVE_METRIC}"
-		set_if_changed "network.${INTERFACE6}.defaultroute" "${IPV6_DEFAULT}"
 		set_if_changed "network.${INTERFACE6}.auto" "${IPV6_AUTO}"
 		set_if_changed "network.${INTERFACE6}.extendprefix" '1'
 		delete_if_present "network.${INTERFACE6}.modem_config"
