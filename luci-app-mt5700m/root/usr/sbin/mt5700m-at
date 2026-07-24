@@ -47,25 +47,27 @@ run_with_timeout() {
 }
 
 detect_modem_gateway() {
-	local gateway
+	local gateway netdev
 
 	command -v ip >/dev/null 2>&1 || return 1
+	netdev="$(mt5700m_netdev 2>/dev/null || true)"
+	[ -n "${netdev}" ] || return 1
 
-	gateway="$(ip -4 route show default 2>/dev/null | awk '
-		$0 ~ / dev (eth2|usb|wwan|wwan0|qmimux|rmnet|mhi|USB)/ {
+	gateway="$(ip -4 route show default 2>/dev/null | awk -v wanted="${netdev}" '
+		{
+			matched = 0
 			for (i = 1; i <= NF; i++) {
-				if ($i == "via") {
-					print $(i + 1)
-					exit
+				if ($i == "dev" && $(i + 1) == wanted)
+					matched = 1
+			}
+			if (matched) {
+				for (i = 1; i <= NF; i++) {
+					if ($i == "via") {
+						print $(i + 1)
+						exit
+					}
 				}
 			}
-		}
-	')"
-
-	[ -n "${gateway}" ] || gateway="$(ip -4 route show 10.0.0.0/8 2>/dev/null | awk '
-		$0 ~ / dev (eth2|usb|wwan|wwan0|qmimux|rmnet|mhi|USB)/ {
-			print "10.0.0.1"
-			exit
 		}
 	')"
 

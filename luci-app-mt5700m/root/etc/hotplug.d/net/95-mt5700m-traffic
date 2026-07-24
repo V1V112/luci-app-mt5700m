@@ -1,10 +1,21 @@
 #!/bin/sh
 
-case "${INTERFACE:-${DEVICE:-}}:${ACTION:-}" in
-	eth2:add|eth2:register|eth2:ifup)
-		[ -x /etc/init.d/mt5700m-traffic ] || exit 0
-		/etc/init.d/mt5700m-traffic running >/dev/null 2>&1 || /etc/init.d/mt5700m-traffic start >/dev/null 2>&1
-		;;
+USB_HELPER="${MT5700M_USB_HELPER:-/usr/share/mt5700m/usb.sh}"
+TRAFFIC_COMMAND="${MT5700M_TRAFFIC_COMMAND:-/usr/sbin/mt5700m-traffic}"
+TRAFFIC_SERVICE="${MT5700M_TRAFFIC_SERVICE:-/etc/init.d/mt5700m-traffic}"
+
+[ -r "${USB_HELPER}" ] && . "${USB_HELPER}"
+
+case "${ACTION:-}" in add|register|ifup) ;; *) exit 0 ;; esac
+command -v mt5700m_netdev >/dev/null 2>&1 || exit 0
+netdev="$(mt5700m_netdev 2>/dev/null || true)"
+[ -n "${netdev}" ] || exit 0
+[ "${DEVICE:-}" = "${netdev}" ] || [ "${INTERFACE:-}" = "${netdev}" ] || exit 0
+
+case "${ACTION}" in
+	add|register) [ ! -x "${TRAFFIC_COMMAND}" ] || "${TRAFFIC_COMMAND}" reset "${netdev}" >/dev/null 2>&1 ;;
 esac
+[ -x "${TRAFFIC_SERVICE}" ] || exit 0
+"${TRAFFIC_SERVICE}" running >/dev/null 2>&1 || "${TRAFFIC_SERVICE}" start >/dev/null 2>&1
 
 exit 0

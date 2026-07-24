@@ -38,6 +38,45 @@ function trafficUpdated(iface) {
 		value.date.day || 0, value.time && value.time.hour || 0, value.time && value.time.minute || 0);
 }
 
+function aggregateTraffic(interfaces) {
+	var totals = { rx:0, tx:0 }, days = {}, months = {}, updated = null, updatedKey = '';
+
+	(interfaces || []).forEach(function(iface) {
+		var traffic = iface && iface.traffic || {}, value = iface && iface.updated || {};
+		var key = value.date
+			? '%04d%02d%02d%02d%02d'.format(value.date.year || 0, value.date.month || 0,
+				value.date.day || 0, value.time && value.time.hour || 0, value.time && value.time.minute || 0)
+			: '';
+		if (key > updatedKey) {
+			updated = value;
+			updatedKey = key;
+		}
+		totals.rx += Number(traffic.total && traffic.total.rx) || 0;
+		totals.tx += Number(traffic.total && traffic.total.tx) || 0;
+		(traffic.day || []).forEach(function(item) {
+			var dayKey = trafficDateKey(item, false);
+			days[dayKey] = days[dayKey] || { date:item.date, rx:0, tx:0 };
+			days[dayKey].rx += Number(item.rx) || 0;
+			days[dayKey].tx += Number(item.tx) || 0;
+		});
+		(traffic.month || []).forEach(function(item) {
+			var monthKey = trafficDateKey(item, true);
+			months[monthKey] = months[monthKey] || { date:item.date, rx:0, tx:0 };
+			months[monthKey].rx += Number(item.rx) || 0;
+			months[monthKey].tx += Number(item.tx) || 0;
+		});
+	});
+
+	return {
+		updated:updated,
+		traffic:{
+			total:totals,
+			day:Object.keys(days).map(function(key) { return days[key]; }),
+			month:Object.keys(months).map(function(key) { return months[key]; })
+		}
+	};
+}
+
 return view.extend({
 	load: function() {
 		return callManagerStatus().catch(function() { return {}; }).then(function(manager) {
@@ -186,8 +225,10 @@ return view.extend({
 	},
 
 	trafficPanel: function(report, interfaceName) {
-		var iface = (report.interfaces || []).filter(function(item) { return item.name === interfaceName; })[0] ||
-			(report.interfaces || []).filter(function(item) { return item.name === 'eth2'; })[0] || { traffic:{} };
+		var interfaces = report.interfaces || [];
+		var iface = interfaces.length > 1 ? aggregateTraffic(interfaces) :
+			interfaces.filter(function(item) { return item.name === interfaceName; })[0] ||
+			interfaces[0] || { traffic:{} };
 		var traffic = iface.traffic || {}, days = sortedTraffic(traffic.day, false), months = sortedTraffic(traffic.month, true);
 		var today = currentTraffic(days, false), month = currentTraffic(months, true), lifetime = traffic.total || {};
 		var recentDays = days.slice(-7).reverse(), maximum = Math.max.apply(Math, recentDays.map(trafficTotal).concat([ 1 ]));
@@ -233,7 +274,7 @@ return view.extend({
 				E('div', { 'class':'mt5700m-hero-side' }, [ E('div', { 'class':'mt5700m-status' + (connected ? ' online' : '') }, [ E('span', { 'class':'mt5700m-dot' }), connected ? _('Connected') : reachable ? _('Module online') : _('Unavailable') ]), E('button', { 'class':'btn mt5700m-refresh', 'click':function() { window.location.reload(); } }, _('Refresh')) ])
 			]),
 			E('div', { 'class':'mt5700m-focus-grid' }, [ this.signalCard(data), this.carrierCard(carrierInfo), this.addressCard(session) ]),
-			this.trafficPanel(res.traffic || {}, data.network_interface || 'eth2'),
+			this.trafficPanel(res.traffic || {}, data.network_interface),
 			E('div', { 'class':'mt5700m-shortcuts' }, [
 				this.shortcut(_('Mobile data'), _('APN, dialing, IP details and session counters'), 'admin/modem/mt5700m/connection'),
 				this.shortcut(_('Radio and Cells'), _('Bands, cells, radio policy and diagnostics'), 'admin/modem/mt5700m/network'),

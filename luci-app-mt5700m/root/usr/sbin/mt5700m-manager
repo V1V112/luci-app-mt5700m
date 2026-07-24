@@ -7,8 +7,12 @@ LOG_FILE="${MT5700M_MANAGER_LOG:-/tmp/mt5700m-manager.log}"
 USB_HELPER="${MT5700M_USB_HELPER:-/usr/share/mt5700m/usb.sh}"
 AT_HELPER="${MT5700M_AT_HELPER:-/usr/sbin/mt5700m-at}"
 TEMP_CACHE="${STATE_DIR}/temperature"
-INTERFACE='MT5700M'
-INTERFACE6='MT5700Mv6'
+INTERFACE_STATE="${STATE_DIR}/interfaces"
+DEFAULT_INTERFACE='MT5700M'
+DEFAULT_INTERFACE6='MT5700Mv6'
+INTERFACE="${DEFAULT_INTERFACE}"
+INTERFACE6="${DEFAULT_INTERFACE6}"
+INTERFACE_NETDEV=''
 
 [ -r "${USB_HELPER}" ] && . "${USB_HELPER}"
 
@@ -55,6 +59,190 @@ bool_value() {
 
 config_value() {
 	uci -q get "mt5700m.connection.$1" 2>/dev/null || printf '%s\n' "$2"
+}
+
+valid_interface_name() {
+	case "$1" in
+		''|*[!A-Za-z0-9_-]*) return 1 ;;
+	esac
+	return 0
+}
+
+valid_netdev_name() {
+	case "$1" in
+		''|*[!A-Za-z0-9_.:-]*) return 1 ;;
+	esac
+	return 0
+}
+
+network_interface_sections() {
+	uci -q show network 2>/dev/null |
+		sed -n "s/^network\.\([^.=]*\)=interface$/\1/p;s/^network\.\([^.=]*\)='interface'$/\1/p"
+}
+
+network_binding() {
+	local section="$1"
+	uci -q get "network.${section}.device" 2>/dev/null ||
+		uci -q get "network.${section}.ifname" 2>/dev/null ||
+		true
+}
+
+# Prefer an existing user interface on the modem's exact physical netdev. Only
+# DHCP (or the protocol-less parent used for IPv6-only PDP) is safe to reuse.
+find_primary_interface() {
+	local netdev="$1" ownership section binding proto managed
+
+	for ownership in user managed; do
+		for section in $(network_interface_sections); do
+			valid_interface_name "${section}" || continue
+			binding="$(network_binding "${section}")"
+			[ "${binding}" = "${netdev}" ] || continue
+			proto="$(uci -q get "network.${section}.proto" 2>/dev/null || true)"
+			case "${proto}" in dhcp|none) ;; *) continue ;; esac
+			managed="$(uci -q get "network.${section}.managed_by" 2>/dev/null || true)"
+			case "${ownership}" in
+				user) [ -z "${managed}" ] || continue ;;
+				managed) [ "${managed}" = 'mt5700m' ] || continue ;;
+			esac
+			printf '%s\n' "${section}"
+			return 0
+		done
+	done
+	return 1
+}
+
+find_ipv6_interface() {
+	local primary="$1" netdev="$2" target ownership section binding managed
+
+	for ownership in user managed; do
+		for target in "@${primary}" "${netdev}"; do
+			[ -n "${target}" ] || continue
+			for section in $(network_interface_sections); do
+				valid_interface_name "${section}" || continue
+				[ "$(uci -q get "network.${section}.proto" 2>/dev/null || true)" = 'dhcpv6' ] || continue
+				binding="$(network_binding "${section}")"
+				[ "${binding}" = "${target}" ] || continue
+				managed="$(uci -q get "network.${section}.managed_by" 2>/dev/null || true)"
+				case "${ownership}" in
+					user) [ -z "${managed}" ] || continue ;;
+					managed) [ "${managed}" = 'mt5700m' ] || continue ;;
+				esac
+				printf '%s\n' "${section}"
+				return 0
+			done
+		done
+	done
+	return 1
+}
+
+find_managed_interface() {
+	local family="$1" section proto
+
+	for section in $(network_interface_sections); do
+		valid_interface_name "${section}" || continue
+		[ "$(uci -q get "network.${section}.managed_by" 2>/dev/null || true)" = 'mt5700m' ] || continue
+		proto="$(uci -q get "network.${section}.proto" 2>/dev/null || true)"
+		case "${family}" in
+			4) [ "${proto}" != 'dhcpv6' ] || continue ;;
+			6) [ "${proto}" = 'dhcpv6' ] || continue ;;
+			*) return 1 ;;
+		esac
+		printf '%s\n' "${section}"
+		return 0
+	done
+	return 1
+}
+
+available_interface_name() {
+	local base="$1" candidate suffix=2
+
+	candidate="${base}"
+	while uci -q get "network.${candidate}" >/dev/null 2>&1; do
+		candidate="${base}_${suffix}"
+		suffix=$((suffix + 1))
+	done
+	printf '%s\n' "${candidate}"
+}
+
+suggest_ipv6_interface() {
+	local primary="$1" candidate
+
+	case "${primary}" in
+		*_v4) candidate="${primary%_v4}_v6" ;;
+		*-v4) candidate="${primary%-v4}-v6" ;;
+		*4) candidate="${primary%4}6" ;;
+		*) candidate="${primary}v6" ;;
+	esac
+	available_interface_name "${candidate}"
+}
+
+load_interface_state() {
+	local primary ipv6 netdev ipv6_type
+
+	[ -r "${INTERFACE_STATE}" ] || return 1
+	primary="$(sed -n '1p' "${INTERFACE_STATE}" 2>/dev/null)"
+	ipv6="$(sed -n '2p' "${INTERFACE_STATE}" 2>/dev/null)"
+	netdev="$(sed -n '3p' "${INTERFACE_STATE}" 2>/dev/null)"
+	valid_interface_name "${primary}" || return 1
+	valid_interface_name "${ipv6}" || return 1
+	valid_netdev_name "${netdev}" || return 1
+	[ "$(uci -q get "network.${primary}" 2>/dev/null || true)" = 'interface' ] || return 1
+	[ "$(network_binding "${primary}")" = "${netdev}" ] || return 1
+	ipv6_type="$(uci -q get "network.${ipv6}" 2>/dev/null || true)"
+	if [ -n "${ipv6_type}" ]; then
+		[ "${ipv6_type}" = 'interface' ] || return 1
+		[ "$(uci -q get "network.${ipv6}.proto" 2>/dev/null || true)" = 'dhcpv6' ] || return 1
+		case "$(network_binding "${ipv6}")" in
+			"@${primary}"|"${netdev}") ;;
+			*) return 1 ;;
+		esac
+	fi
+	INTERFACE="${primary}"
+	INTERFACE6="${ipv6}"
+	INTERFACE_NETDEV="${netdev}"
+}
+
+save_interface_state() {
+	local tmp
+
+	mkdir -p "${STATE_DIR}" || return 1
+	tmp="${INTERFACE_STATE}.$$"
+	printf '%s\n%s\n%s\n' "${INTERFACE}" "${INTERFACE6}" "${INTERFACE_NETDEV}" > "${tmp}" || return 1
+	mv "${tmp}" "${INTERFACE_STATE}" || return 1
+	chmod 0600 "${INTERFACE_STATE}" 2>/dev/null || true
+}
+
+resolve_network_interfaces() {
+	local netdev="$1" detected
+
+	INTERFACE="${DEFAULT_INTERFACE}"
+	INTERFACE6="${DEFAULT_INTERFACE6}"
+	INTERFACE_NETDEV=''
+	if [ -z "${netdev}" ]; then
+		load_interface_state && return 0
+		detected="$(find_managed_interface 4 || true)"
+		[ -z "${detected}" ] || INTERFACE="${detected}"
+		detected="$(find_managed_interface 6 || true)"
+		[ -z "${detected}" ] || INTERFACE6="${detected}"
+		return 0
+	fi
+	INTERFACE_NETDEV="${netdev}"
+
+	detected="$(find_primary_interface "${netdev}" || true)"
+	[ -n "${detected}" ] || detected="$(find_managed_interface 4 || true)"
+	if [ -n "${detected}" ]; then
+		INTERFACE="${detected}"
+	else
+		INTERFACE="$(available_interface_name "${DEFAULT_INTERFACE}")"
+	fi
+
+	detected="$(find_ipv6_interface "${INTERFACE}" "${netdev}" || true)"
+	[ -n "${detected}" ] || detected="$(find_managed_interface 6 || true)"
+	if [ -n "${detected}" ]; then
+		INTERFACE6="${detected}"
+	else
+		INTERFACE6="$(suggest_ipv6_interface "${INTERFACE}")"
+	fi
 }
 
 run_temperature_query() {
@@ -118,10 +306,52 @@ ensure_firewall_network() {
 	FIREWALL_CHANGED=1
 }
 
+remove_firewall_network() {
+	local network="$1" zone
+	zone="$(uci -q show firewall 2>/dev/null | sed -n "s/^\(firewall\.[^.]*\)\.name='wan'$/\1/p" | head -n 1)"
+	[ -n "${zone}" ] || return 0
+	list_contains "${zone}.network" "${network}" || return 0
+	uci -q del_list "${zone}.network=${network}" || return 1
+	FIREWALL_CHANGED=1
+}
+
+cleanup_managed_duplicates() {
+	local netdev="$1" section child binding
+
+	# Upgrades may leave the old fixed-name pair beside a user-owned pair.
+	# Remove only duplicates carrying this manager's explicit ownership marker.
+	for section in $(network_interface_sections); do
+		[ "${section}" != "${INTERFACE}" ] || continue
+		[ "$(uci -q get "network.${section}.managed_by" 2>/dev/null || true)" = 'mt5700m' ] || continue
+		[ "$(uci -q get "network.${section}.proto" 2>/dev/null || true)" != 'dhcpv6' ] || continue
+		[ "$(network_binding "${section}")" = "${netdev}" ] || continue
+
+		for child in $(network_interface_sections); do
+			[ "${child}" != "${INTERFACE6}" ] || continue
+			[ "$(uci -q get "network.${child}.managed_by" 2>/dev/null || true)" = 'mt5700m' ] || continue
+			[ "$(uci -q get "network.${child}.proto" 2>/dev/null || true)" = 'dhcpv6' ] || continue
+			[ "$(network_binding "${child}")" = "@${section}" ] || continue
+			remove_firewall_network "${child}"
+			delete_if_present "network.${child}"
+		done
+		remove_firewall_network "${section}"
+		delete_if_present "network.${section}"
+	done
+
+	for section in $(network_interface_sections); do
+		[ "${section}" != "${INTERFACE6}" ] || continue
+		[ "$(uci -q get "network.${section}.managed_by" 2>/dev/null || true)" = 'mt5700m' ] || continue
+		[ "$(uci -q get "network.${section}.proto" 2>/dev/null || true)" = 'dhcpv6' ] || continue
+		binding="$(network_binding "${section}")"
+		case "${binding}" in "${netdev}"|"@${INTERFACE}") ;; *) continue ;; esac
+		remove_firewall_network "${section}"
+		delete_if_present "network.${section}"
+	done
+}
+
 effective_policy() {
-	local mode owner configured_metric
+	local mode configured_metric
 	mode="$(uci -q get h5000m_netmode.settings.mode 2>/dev/null || true)"
-	owner="$(uci -q get h5000m_netmode.settings.ipv6_owner 2>/dev/null || true)"
 	configured_metric="$(config_value metric 50)"
 	case "${configured_metric}" in ''|*[!0-9]*) configured_metric=50 ;; esac
 
@@ -130,28 +360,31 @@ effective_policy() {
 		wan_first|wan_only) EFFECTIVE_METRIC=50 ;;
 		*) EFFECTIVE_METRIC="${configured_metric}" ;;
 	esac
-	case "${mode}" in wan_only) IPV4_DEFAULT=0 ;; *) IPV4_DEFAULT=1 ;; esac
-	case "${owner}" in
-		modem) IPV6_DEFAULT=1; IPV6_AUTO=1 ;;
-		wan) IPV6_DEFAULT=0; IPV6_AUTO=0 ;;
-		*)
-			case "${mode}" in modem_first|modem_only) IPV6_DEFAULT=1; IPV6_AUTO=1 ;; *) IPV6_DEFAULT=0; IPV6_AUTO=0 ;; esac
-			;;
+	case "${mode}" in
+		wan_only) IPV4_DEFAULT=0; IPV6_DEFAULT=0 ;;
+		modem_first|modem_only) IPV4_DEFAULT=1; IPV6_DEFAULT=1 ;;
+		*) IPV4_DEFAULT=1; IPV6_DEFAULT=0 ;;
 	esac
+	# IPv6 availability controls autostart; route ownership does not.
+	IPV6_AUTO=1
 }
 
 ensure_network() {
-	local netdev="$1" pdp_type dns current_dns
+	local netdev="$1" pdp_type dns current_dns interface_type interface_managed
 	CONFIG_CHANGED=0
 	FIREWALL_CHANGED=0
 	pdp_type="$(config_value pdp_type ipv4v6)"
 	case "${pdp_type}" in ip|ipv6|ipv4v6) ;; *) pdp_type='ipv4v6' ;; esac
 	effective_policy
+	resolve_network_interfaces "${netdev}"
+	cleanup_managed_duplicates "${netdev}"
 
+	interface_type="$(uci -q get "network.${INTERFACE}" 2>/dev/null || true)"
 	set_if_changed "network.${INTERFACE}" 'interface'
-	set_if_changed "network.${INTERFACE}.managed_by" 'mt5700m'
+	[ -n "${interface_type}" ] || set_if_changed "network.${INTERFACE}.managed_by" 'mt5700m'
+	interface_managed="$(uci -q get "network.${INTERFACE}.managed_by" 2>/dev/null || true)"
 	set_if_changed "network.${INTERFACE}.device" "${netdev}"
-	set_if_changed "network.${INTERFACE}.ifname" "${netdev}"
+	[ "${interface_managed}" != 'mt5700m' ] || set_if_changed "network.${INTERFACE}.ifname" "${netdev}"
 	set_if_changed "network.${INTERFACE}.metric" "${EFFECTIVE_METRIC}"
 	set_if_changed "network.${INTERFACE}.defaultroute" "${IPV4_DEFAULT}"
 	set_if_changed "network.${INTERFACE}.norelease" '1'
@@ -171,31 +404,39 @@ ensure_network() {
 			CONFIG_CHANGED=1
 		fi
 	else
-		delete_if_present "network.${INTERFACE}.dns"
-		delete_if_present "network.${INTERFACE}.peerdns"
+		if [ "${interface_managed}" = 'mt5700m' ]; then
+			delete_if_present "network.${INTERFACE}.dns"
+			delete_if_present "network.${INTERFACE}.peerdns"
+		fi
 	fi
 
 	if [ "${pdp_type}" = 'ip' ]; then
-		delete_if_present "network.${INTERFACE6}"
+		if [ "$(uci -q get "network.${INTERFACE6}.managed_by" 2>/dev/null || true)" = 'mt5700m' ]; then
+			remove_firewall_network "${INTERFACE6}"
+			delete_if_present "network.${INTERFACE6}"
+		fi
 	else
+		interface_type="$(uci -q get "network.${INTERFACE6}" 2>/dev/null || true)"
 		set_if_changed "network.${INTERFACE6}" 'interface'
-		set_if_changed "network.${INTERFACE6}.managed_by" 'mt5700m'
+		[ -n "${interface_type}" ] || set_if_changed "network.${INTERFACE6}.managed_by" 'mt5700m'
+		interface_managed="$(uci -q get "network.${INTERFACE6}.managed_by" 2>/dev/null || true)"
 		set_if_changed "network.${INTERFACE6}.proto" 'dhcpv6'
 		set_if_changed "network.${INTERFACE6}.device" "@${INTERFACE}"
-		set_if_changed "network.${INTERFACE6}.ifname" "@${INTERFACE}"
+		[ "${interface_managed}" != 'mt5700m' ] || set_if_changed "network.${INTERFACE6}.ifname" "@${INTERFACE}"
 		set_if_changed "network.${INTERFACE6}.metric" "${EFFECTIVE_METRIC}"
 		set_if_changed "network.${INTERFACE6}.defaultroute" "${IPV6_DEFAULT}"
 		set_if_changed "network.${INTERFACE6}.auto" "${IPV6_AUTO}"
 		set_if_changed "network.${INTERFACE6}.extendprefix" '1'
 		delete_if_present "network.${INTERFACE6}.modem_config"
 	fi
+	save_interface_state || log_message 'unable to save resolved network interfaces'
 	ensure_firewall_network "${INTERFACE}"
 	[ "${pdp_type}" = 'ip' ] || ensure_firewall_network "${INTERFACE6}"
 
 	if [ "${CONFIG_CHANGED}" = '1' ]; then
 		uci -q commit network
 		/etc/init.d/network reload >/dev/null 2>&1 || true
-		log_message "network synchronized device=${netdev} protocol=${pdp_type} metric=${EFFECTIVE_METRIC}"
+		log_message "network synchronized device=${netdev} interface=${INTERFACE} interface6=${INTERFACE6} protocol=${pdp_type} metric=${EFFECTIVE_METRIC}"
 	fi
 	if [ "${FIREWALL_CHANGED}" = '1' ]; then
 		uci -q commit firewall
@@ -210,28 +451,27 @@ interface_up() {
 }
 
 bring_up() {
-	local pdp_type
+	local pdp_type netdev
+	netdev="$(mt5700m_netdev || true)"
+	resolve_network_interfaces "${netdev}"
 	pdp_type="$(config_value pdp_type ipv4v6)"
 	ifup "${INTERFACE}" >/dev/null 2>&1 || true
 	case "${pdp_type}" in
 		ip) ifdown "${INTERFACE6}" >/dev/null 2>&1 || true ;;
-		*)
-			if [ "$(uci -q get network.${INTERFACE6}.auto 2>/dev/null || echo 1)" = '0' ]; then
-				ifdown "${INTERFACE6}" >/dev/null 2>&1 || true
-			else
-				ifup "${INTERFACE6}" >/dev/null 2>&1 || true
-			fi
-			;;
+		*) ifup "${INTERFACE6}" >/dev/null 2>&1 || true ;;
 	esac
 }
 
 bring_down() {
+	local netdev
+	netdev="$(mt5700m_netdev || true)"
+	resolve_network_interfaces "${netdev}"
 	ifdown "${INTERFACE6}" >/dev/null 2>&1 || true
 	ifdown "${INTERFACE}" >/dev/null 2>&1 || true
 }
 
 sync_manager() {
-	local info state netdev
+	local info state netdev pdp_type
 	info="$(mt5700m_usb_info || true)"
 	state="${info%%|*}"
 	if [ "${state}" != 'normal' ]; then
@@ -251,7 +491,13 @@ sync_manager() {
 	}
 	ensure_network "${netdev}"
 	if [ "$(config_value enabled 1)" = '1' ]; then
-		interface_up "${INTERFACE}" || bring_up
+		pdp_type="$(config_value pdp_type ipv4v6)"
+		if [ "${pdp_type}" = 'ip' ]; then
+			interface_up "${INTERFACE}" || ifup "${INTERFACE}" >/dev/null 2>&1 || true
+			ifdown "${INTERFACE6}" >/dev/null 2>&1 || true
+		elif ! interface_up "${INTERFACE}" || ! interface_up "${INTERFACE6}"; then
+			bring_up
+		fi
 	else
 		bring_down
 	fi
@@ -308,6 +554,7 @@ status_json() {
 	rest="${info#*|}"; product="${rest%%|*}"; slot="${rest#*|}"
 	netdev="$(mt5700m_netdev || true)"
 	atport="$(mt5700m_pcui_port || true)"
+	resolve_network_interfaces "${netdev}"
 	status4="$(ubus call "network.interface.${INTERFACE}" status 2>/dev/null || true)"
 	status6="$(ubus call "network.interface.${INTERFACE6}" status 2>/dev/null || true)"
 	up4="$(bool_value "$(printf '%s' "${status4}" | jsonfilter -e '@.up' 2>/dev/null)")"
