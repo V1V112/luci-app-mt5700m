@@ -1270,10 +1270,10 @@ msgid "Current mode"
 msgstr "当前模式"
 
 msgid "Downlink bandwidth"
-msgstr "下行总带宽"
+msgstr "下行带宽"
 
 msgid "Uplink bandwidth"
-msgstr "上行总带宽"
+msgstr "上行带宽"
 
 msgid "Current carrier information is unavailable."
 msgstr "暂未获取到当前载波信息。"
@@ -1880,6 +1880,12 @@ msgstr "上行调制"
 
 msgid "Downlink modulation"
 msgstr "下行调制"
+
+msgid "Uplink MCS"
+msgstr "上行 MCS"
+
+msgid "Downlink MCS"
+msgstr "下行 MCS"
 
 msgid "QoS class"
 msgstr "QoS 等级"

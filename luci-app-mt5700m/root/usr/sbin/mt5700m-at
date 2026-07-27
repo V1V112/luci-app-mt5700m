@@ -859,6 +859,39 @@ print_carrier_aggregation() {
 		}'
 }
 
+print_mcs_value() {
+	local key="$1"
+	local command="$2"
+	local raw value
+
+	raw="$(at_cmd "${command}" || true)"
+	value="$(printf '%s\n' "${raw}" | awk -F, '
+		/^\^MCS:/ {
+			sub(/^\^MCS:[[:space:]]*/, "", $1)
+			if (NF < 4)
+				next
+			record = ""
+			for (i = 1; i <= NF; i++) {
+				gsub(/[[:space:]\r"]/, "", $i)
+				if ($i !~ /^[0-9]+$/)
+					next
+				record = record (i > 1 ? "," : "") $i
+			}
+			if (record != "")
+				value = value (value != "" ? "|" : "") record
+		}
+		END {
+			if (value != "")
+				print value
+		}')"
+	printf '%s=%s\n' "${key}" "${value}"
+}
+
+print_mcs() {
+	print_mcs_value uplink_mcs 'AT^MCS=0'
+	print_mcs_value downlink_mcs 'AT^MCS=1'
+}
+
 print_lock_status() {
 	local raw
 
@@ -1175,6 +1208,7 @@ case "${1:-status}" in
 		print_signal
 		print_subscription_rate
 		print_carrier_aggregation
+		print_mcs
 		print_temperature
 		print_lock_status
 		;;
@@ -1187,6 +1221,7 @@ case "${1:-status}" in
 		[ "${timeout_s}" -le 2 ] || timeout_s=2
 		print_signal
 		print_carrier_aggregation
+		print_mcs
 		;;
 	command)
 		shift

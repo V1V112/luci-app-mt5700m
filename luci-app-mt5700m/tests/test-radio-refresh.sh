@@ -62,6 +62,12 @@ case "${command}" in
 	'AT^MONSSC')
 		printf '%s\n' '^MONSSC: NR,1' 'OK'
 		;;
+	'AT^MCS=0')
+		printf '%s\n' '^MCS: 0,1,0,0,255' '^MCS: 0,2,1,15,255' 'OK'
+		;;
+	'AT^MCS=1')
+		printf '%s\n' '^MCS: 1,1,1,18,16' '^MCS: 1,2,1,26,24' 'OK'
+		;;
 	*)
 		printf '%s\n' 'ERROR'
 		exit 1
@@ -96,15 +102,21 @@ printf '%s\n' "${output}" | grep -qx 'carrier_count=2'
 printf '%s\n' "${output}" | grep -qx 'ca_active=1'
 printf '%s\n' "${output}" | grep -qx 'dc_active=1'
 printf '%s\n' "${output}" | grep -qx 'ca_mode=EN-DC + CA'
+printf '%s\n' "${output}" | grep -qx 'carrier_1=NR|n78|640000|3500.00|100.0|640000|3400.00|100.0'
+printf '%s\n' "${output}" | grep -qx 'carrier_2=LTE|B3|1300|1840.00|20.0|1650|1950.00|20.0'
 printf '%s\n' "${output}" | grep -qx 'ca_dl_bandwidth=120.0'
 printf '%s\n' "${output}" | grep -qx 'ca_ul_bandwidth=120.0'
+printf '%s\n' "${output}" | grep -qx 'uplink_mcs=0,1,0,0,255|0,2,1,15,255'
+printf '%s\n' "${output}" | grep -qx 'downlink_mcs=1,1,1,18,16|1,2,1,26,24'
 
-[ "$(wc -l < "${COMMAND_LOG}" | tr -d ' ')" = '4' ]
+[ "$(wc -l < "${COMMAND_LOG}" | tr -d ' ')" = '6' ]
 grep -qx 'AT^HCSQ?' "${COMMAND_LOG}"
 grep -qx 'AT^HFREQINFO?' "${COMMAND_LOG}"
 grep -qx 'AT^CASCELLINFO?' "${COMMAND_LOG}"
 grep -qx 'AT^MONSSC' "${COMMAND_LOG}"
-[ "$(wc -l < "${TIMEOUT_LOG}" | tr -d ' ')" = '4' ]
+grep -qx 'AT^MCS=0' "${COMMAND_LOG}"
+grep -qx 'AT^MCS=1' "${COMMAND_LOG}"
+[ "$(wc -l < "${TIMEOUT_LOG}" | tr -d ' ')" = '6' ]
 if grep -vx '2' "${TIMEOUT_LOG}"; then
 	echo 'FAIL: radio refresh did not cap an AT request at two seconds' >&2
 	exit 1

@@ -28,6 +28,16 @@ function matchValues(text, prefix) {
 	return line.substring(prefix.length).replace(/^[ :]+/, '').replace(/"/g, '').split(',').map(function(value) { return value.trim(); });
 }
 
+function matchRecords(text, prefix) {
+	return (text || '').split(/\n/).filter(function(item) {
+		return item.indexOf(prefix) === 0;
+	}).map(function(line) {
+		return line.substring(prefix.length).replace(/^[ :]+/, '').replace(/"/g, '').split(',').map(function(value) {
+			return value.trim();
+		});
+	});
+}
+
 function cleanCsv(value) {
 	return (value || '').replace(/\s+/g, '').replace(/^,+|,+$/g, '').replace(/,+/g, ',');
 }
@@ -47,12 +57,16 @@ function countLines(text, prefix) {
 	return (text || '').split(/\n/).filter(function(line) { return line.indexOf(prefix) === 0; }).length;
 }
 
-function formatMcs(values) {
-	if (!values.length)
-		return '';
-	var rat = values[2] === '1' ? 'NR' : values[2] === '0' ? 'LTE' : '';
-	var codewords = values.slice(3).filter(function(value) { return /^\d+$/.test(value) && value !== '255'; });
-	return [ rat, codewords.length ? 'MCS ' + codewords.join(' / ') : '' ].filter(Boolean).join(' · ');
+function formatMcs(records) {
+	return (records || []).map(function(values) {
+		var codewords;
+		if (values.length < 4 || values[2] !== '1')
+			return '';
+		codewords = values.slice(3).filter(function(value) {
+			return /^\d+$/.test(value) && value !== '255';
+		});
+		return codewords.length ? 'MCS ' + codewords.join(' / ') : '';
+	}).filter(Boolean).join(' · ');
 }
 
 function bandChecklist(options, mask, anyMask) {
@@ -228,8 +242,8 @@ return view.extend({
 	},
 
 	radioDiagnostics: function(raw) {
-		var uplinkMcs = matchValues(controls.section(raw, 'Uplink MCS'), '^MCS');
-		var downlinkMcs = matchValues(controls.section(raw, 'Downlink MCS'), '^MCS');
+		var uplinkMcs = matchRecords(controls.section(raw, 'Uplink MCS'), '^MCS');
+		var downlinkMcs = matchRecords(controls.section(raw, 'Downlink MCS'), '^MCS');
 		var txPower = matchValues(controls.section(raw, 'NR transmit power'), '^NTXPOWER');
 		var ssb = matchValues(controls.section(raw, 'NR SSB beam'), '^NRSSBID');
 		var qos = matchValues(controls.section(raw, 'QoS'), '+CGEQOSRDP');
