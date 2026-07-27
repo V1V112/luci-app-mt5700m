@@ -1,11 +1,22 @@
 'use strict';
 'require view';
+'require dom';
 'require fs';
 'require rpc';
 'require mt5700m.controls as controls';
 
 var callManagerStatus = rpc.declare({ object: 'mt5700m', method: 'status', expect: { } });
 var callTraffic = rpc.declare({ object: 'mt5700m-traffic', method: 'summary', expect: { } });
+
+function parseKeyValues(output) {
+	var data = {};
+	String(output || '').trim().split(/\n/).forEach(function(line) {
+		var pos = line.indexOf('=');
+		if (pos > -1)
+			data[line.substring(0, pos)] = line.substring(pos + 1);
+	});
+	return data;
+}
 
 function trafficTotal(item) {
 	return (Number(item && item.rx) || 0) + (Number(item && item.tx) || 0);
@@ -91,12 +102,7 @@ return view.extend({
 	},
 
 	parseStatus: function(res) {
-		var data = {};
-		(res.native && res.native.stdout || '').trim().split(/\n/).forEach(function(line) {
-			var pos = line.indexOf('=');
-			if (pos > -1)
-				data[line.substring(0, pos)] = line.substring(pos + 1);
-		});
+		var data = parseKeyValues(res.native && res.native.stdout || '');
 
 		data.reachable = data.connected === '1' ? '1' : '0';
 		data.model = data.product_name || 'MT5700M';
@@ -123,6 +129,7 @@ return view.extend({
 			'.mt5700m-hero-side{display:flex;flex-direction:column;align-items:flex-end;gap:10px}.mt5700m-status{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.16);font-size:12px;font-weight:700;white-space:nowrap}.mt5700m-dot{width:8px;height:8px;border-radius:50%;background:#ffcd57;box-shadow:0 0 0 4px rgba(255,205,87,.18)}.mt5700m-status.online .mt5700m-dot{background:#78f2b0;box-shadow:0 0 0 4px rgba(120,242,176,.18)}.mt5700m-refresh{border-color:rgba(255,255,255,.30)!important;background:rgba(255,255,255,.10)!important;color:#fff!important}',
 			'.mt5700m-focus-grid{display:grid;grid-template-columns:1.12fr .88fr 1.18fr;gap:12px;margin-bottom:12px}.mt5700m-focus{display:flex;flex-direction:column;min-height:230px;padding:17px 18px}.mt5700m-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:13px}.mt5700m-focus-title{font-size:14px;font-weight:750}.mt5700m-focus-desc{margin-top:3px;color:var(--mt-ui-muted);font-size:10px;line-height:1.4}',
 			'.mt5700m-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:#eef2f6;color:#6b7480;font-size:10px;font-weight:750;white-space:nowrap}.mt5700m-badge:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.mt5700m-badge.good,.mt5700m-badge.active{background:#e8f8f1;color:#087c60}.mt5700m-badge.fair{background:#fff5df;color:#9b6500}.mt5700m-badge.weak{background:#fff0ee;color:#b84035}',
+			'.mt5700m-radio-refresh{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:-2px 0 11px;padding:0 0 10px;border-bottom:1px solid var(--mt-ui-border)}.mt5700m-radio-refresh .btn{min-height:29px;padding:4px 9px;font-size:10px}.mt5700m-auto-toggle.active{border-color:#168b72!important;background:#e8f8f1!important;color:#087c60!important}.mt5700m-refresh-interval{display:inline-flex;align-items:center;gap:5px;color:var(--mt-ui-muted);font-size:10px;white-space:nowrap}.mt5700m-refresh-interval input{box-sizing:border-box;width:62px;height:29px;padding:3px 6px;text-align:right}.mt5700m-radio-refresh-state{flex-basis:100%;min-height:13px;color:var(--mt-ui-muted);font-size:9px;line-height:1.35}.mt5700m-radio-refresh-state.error{color:#b84035}',
 			'.mt5700m-signal-value{display:flex;align-items:baseline;gap:6px}.mt5700m-signal-value strong{font-size:31px;letter-spacing:-.04em}.mt5700m-signal-value span{font-size:11px;color:var(--mt-ui-muted)}.mt5700m-signal-bars{display:flex;align-items:flex-end;gap:3px;height:52px;margin:5px 0 13px}.mt5700m-signal-bar{flex:1;min-width:2px;border-radius:2px 2px 1px 1px;background:var(--mt-ui-border);opacity:.55}.mt5700m-signal-bar.on{background:#4b94df;opacity:1}.mt5700m-signal-bars.excellent .on{background:#13a979}.mt5700m-signal-bars.fair .on{background:#e4a23a}.mt5700m-signal-bars.weak .on{background:#db5b52}',
 			'.mt5700m-signal-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:auto}.mt5700m-mini{padding:8px;border-radius:9px;background:var(--background-color-low,#f5f7f9)}.mt5700m-mini span{display:block;margin-bottom:3px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-mini strong{font-size:12px}',
 			'.mt5700m-carrier-main{margin:2px 0 12px}.mt5700m-carrier-main strong{display:block;font-size:29px;line-height:1.15;letter-spacing:-.03em}.mt5700m-carrier-main span{display:block;margin-top:4px;color:var(--mt-ui-muted);font-size:11px}.mt5700m-band-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.mt5700m-band{padding:5px 8px;border-radius:8px;background:#edf5ff;color:#176bc1;font-size:10px;font-weight:700}.mt5700m-carrier-stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}',
@@ -133,7 +140,7 @@ return view.extend({
 			'.mt5700m-days{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:2px 0 2px 8px}.mt5700m-day{display:grid;grid-template-columns:42px minmax(80px,1fr) 112px;align-items:center;gap:8px;font-size:9px}.mt5700m-date{color:var(--mt-ui-muted);font-weight:650}.mt5700m-bars{display:flex;flex-direction:column;gap:2px}.mt5700m-bar{height:4px;border-radius:999px;background:var(--background-color-low,#eef1f5);overflow:hidden}.mt5700m-bar i{display:block;height:100%;min-width:2px;border-radius:inherit;background:#337de8}.mt5700m-bar.tx i{background:#16a085}.mt5700m-values{text-align:right;font-variant-numeric:tabular-nums;color:var(--mt-ui-muted)}',
 			'.mt5700m-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.mt5700m-shortcut{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;color:inherit;text-decoration:none}.mt5700m-shortcut strong{display:block;font-size:12px}.mt5700m-shortcut span{display:block;margin-top:3px;color:var(--mt-ui-muted);font-size:9px;line-height:1.4}.mt5700m-shortcut b{color:#176bc1;font-size:20px}.mt5700m-alert{margin-bottom:12px}',
 			'@media(max-width:900px){.mt5700m-focus-grid{grid-template-columns:1fr 1fr}.mt5700m-address-card{grid-column:1/-1;min-height:auto}.mt5700m-traffic-layout{grid-template-columns:repeat(3,1fr)}.mt5700m-days{grid-column:1/-1;padding:8px 0 0}}',
-			'@media(max-width:650px){.mt5700m-hero{display:block}.mt5700m-hero-side{align-items:flex-start;margin-top:14px}.mt5700m-focus-grid,.mt5700m-shortcuts{grid-template-columns:1fr}.mt5700m-address-card{grid-column:auto}.mt5700m-focus{min-height:auto}.mt5700m-traffic-layout{grid-template-columns:1fr}.mt5700m-days{grid-column:auto}.mt5700m-day{grid-template-columns:38px 1fr}.mt5700m-values{grid-column:2;text-align:left}.mt5700m-traffic-head{display:block}.mt5700m-updated{margin-top:7px}}'
+			'@media(max-width:650px){.mt5700m-hero{display:block}.mt5700m-hero-side{align-items:flex-start;margin-top:14px}.mt5700m-focus-grid,.mt5700m-shortcuts{grid-template-columns:1fr}.mt5700m-address-card{grid-column:auto}.mt5700m-focus{min-height:auto}.mt5700m-radio-refresh{align-items:flex-start}.mt5700m-refresh-interval{flex:1 1 100%}.mt5700m-traffic-layout{grid-template-columns:1fr}.mt5700m-days{grid-column:auto}.mt5700m-day{grid-template-columns:38px 1fr}.mt5700m-values{grid-column:2;text-align:left}.mt5700m-traffic-head{display:block}.mt5700m-updated{margin-top:7px}}'
 		].join(''));
 	},
 
@@ -168,44 +175,254 @@ return view.extend({
 		};
 	},
 
-	signalCard: function(data) {
+	updateSignalCard: function(data, refs) {
 		var rsrp = parseFloat(data.rsrp), rsrq = parseFloat(data.rsrq), sinr = parseFloat(data.sinr);
 		var quality = this.signalQuality('rsrp', rsrp), active = isNaN(rsrp) ? 0 : Math.max(1, Math.round(quality.percentage / 100 * 14));
 		var bars = [], i;
 		for (i = 0; i < 14; i++)
 			bars.push(E('span', { 'class':'mt5700m-signal-bar' + (i < active ? ' on' : ''), 'style':'height:%dpx'.format(8 + i * 3) }));
-		return E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
-			E('div', { 'class':'mt5700m-focus-head' }, [
-				E('div', {}, [ E('div', { 'class':'mt5700m-focus-title' }, _('Signal')), E('div', { 'class':'mt5700m-focus-desc' }, _('Current radio quality at a glance')) ]),
-				E('span', { 'class':'mt5700m-badge ' + quality.cls }, quality.label)
+
+		refs.badge.className = 'mt5700m-badge ' + quality.cls;
+		dom.content(refs.badge, quality.label);
+		dom.content(refs.rsrp, isNaN(rsrp) ? '--' : String(data.rsrp));
+		refs.bars.className = 'mt5700m-signal-bars ' + quality.cls;
+		dom.content(refs.bars, bars);
+		dom.content(refs.rsrq, isNaN(rsrq) ? '--' : data.rsrq + ' dB');
+		dom.content(refs.sinr, isNaN(sinr) ? '--' : data.sinr + ' dB');
+	},
+
+	refreshInterval: function(state) {
+		var seconds = parseFloat(state.intervalInput.value);
+		if (!isFinite(seconds) || seconds <= 0) {
+			seconds = 5;
+			state.intervalInput.value = '5';
+		}
+		return seconds * 1000;
+	},
+
+	scheduleRadioRefresh: function(state) {
+		var self = this;
+		var due;
+		if (state.timer !== null) {
+			window.clearTimeout(state.timer);
+			state.timer = null;
+		}
+		if (!state.auto || state.destroyed || document.hidden)
+			return;
+		due = Date.now() + this.refreshInterval(state);
+		(function armTimer() {
+			var remaining;
+			if (!state.auto || state.destroyed || document.hidden)
+				return;
+			remaining = due - Date.now();
+			if (remaining <= 0) {
+				state.timer = null;
+				self.refreshRadioStatus(state);
+				return;
+			}
+			// Browsers cap a single timer at a signed 32-bit millisecond value.
+			// Re-arm very long user-defined intervals instead of wrapping them.
+			state.timer = window.setTimeout(armTimer, Math.min(remaining, 2147483647));
+		})();
+	},
+
+	stopRadioRefresh: function(state) {
+		if (!state || state.destroyed)
+			return;
+		state.destroyed = true;
+		if (state.timer !== null)
+			window.clearTimeout(state.timer);
+		state.timer = null;
+		if (state.visibilityHandler)
+			document.removeEventListener('visibilitychange', state.visibilityHandler);
+		if (state.pageHideHandler)
+			window.removeEventListener('pagehide', state.pageHideHandler);
+	},
+
+	refreshRadioStatus: function(state) {
+		var self = this;
+		if (state.busy || state.destroyed)
+			return Promise.resolve();
+
+		if (state.timer !== null) {
+			window.clearTimeout(state.timer);
+			state.timer = null;
+		}
+		state.busy = true;
+		state.refreshButton.disabled = true;
+		dom.content(state.refreshButton, _('Refreshing…'));
+		state.message.className = 'mt5700m-radio-refresh-state';
+		state.message.title = '';
+		dom.content(state.message, _('Refreshing signal and carrier status…'));
+
+		return fs.exec('/usr/sbin/mt5700m-at', [ 'radio-status' ]).then(function(result) {
+			var fresh = parseKeyValues(result.stdout || '');
+			var signalKeys = [ 'sysmode', 'rsrp', 'rsrq', 'sinr', 'rssi', 'rscp', 'ecio' ];
+			var carrierKeys = [
+				'carrier_count', 'ca_active', 'dc_active', 'nr_carrier_count',
+				'lte_carrier_count', 'lte_secondary_count', 'secondary_connection_count',
+				'ca_mode', 'ca_dl_bandwidth', 'ca_ul_bandwidth'
+			];
+			var hasSignal = signalKeys.some(function(key) {
+				return Object.prototype.hasOwnProperty.call(fresh, key);
+			});
+			var hasCarrier = Object.prototype.hasOwnProperty.call(fresh, 'carrier_count');
+
+			if (!hasSignal && !hasCarrier)
+				throw new Error(_('The modem returned no signal or carrier data.'));
+
+			if (hasSignal)
+				signalKeys.forEach(function(key) { delete state.data[key]; });
+			if (hasCarrier) {
+				Object.keys(state.data).forEach(function(key) {
+					if (/^carrier_[0-9]+$/.test(key))
+						delete state.data[key];
+				});
+				carrierKeys.forEach(function(key) { delete state.data[key]; });
+			}
+			Object.keys(fresh).forEach(function(key) { state.data[key] = fresh[key]; });
+
+			if (hasSignal)
+				self.updateSignalCard(state.data, state.signalRefs);
+			if (hasCarrier)
+				self.updateCarrierCard(self.carrierInfo(state.data), state.carrierRefs);
+		}).then(function() {
+			if (state.destroyed)
+				return;
+			state.message.className = 'mt5700m-radio-refresh-state';
+			state.message.title = '';
+			dom.content(state.message, _('Updated at %s').format(new Date().toLocaleTimeString()));
+		}, function(err) {
+			if (state.destroyed)
+				return;
+			state.message.className = 'mt5700m-radio-refresh-state error';
+			state.message.title = err && err.message || String(err);
+			dom.content(state.message, _('Refresh failed; the previous values are retained.'));
+		}).then(function() {
+			state.busy = false;
+			if (!state.destroyed) {
+				state.refreshButton.disabled = false;
+				dom.content(state.refreshButton, _('Refresh signal and carriers'));
+				self.scheduleRadioRefresh(state);
+			}
+		});
+	},
+
+	radioRefreshControls: function(state) {
+		var self = this;
+		state.refreshButton = E('button', {
+			'type':'button',
+			'class':'btn cbi-button-action',
+			'click':function() { self.refreshRadioStatus(state); }
+		}, _('Refresh signal and carriers'));
+		state.autoButton = E('button', {
+			'type':'button',
+			'class':'btn mt5700m-auto-toggle',
+			'aria-pressed':'false',
+			'click':function() {
+				state.auto = !state.auto;
+				state.autoButton.className = 'btn mt5700m-auto-toggle' + (state.auto ? ' active' : '');
+				state.autoButton.setAttribute('aria-pressed', state.auto ? 'true' : 'false');
+				dom.content(state.autoButton, state.auto ? _('Auto refresh: On') : _('Auto refresh: Off'));
+				self.scheduleRadioRefresh(state);
+			}
+		}, _('Auto refresh: Off'));
+		state.intervalInput = E('input', {
+			'type':'number',
+			'step':'any',
+			'value':'5',
+			'inputmode':'decimal',
+			'aria-label':_('Refresh interval in seconds'),
+			'change':function() {
+				self.refreshInterval(state);
+				self.scheduleRadioRefresh(state);
+			}
+		});
+		state.message = E('span', { 'class':'mt5700m-radio-refresh-state' }, _('Only signal and carrier status are refreshed.'));
+		state.visibilityHandler = function() {
+			if (document.hidden && state.timer !== null) {
+				window.clearTimeout(state.timer);
+				state.timer = null;
+			}
+			else if (!document.hidden) {
+				self.scheduleRadioRefresh(state);
+			}
+		};
+		state.pageHideHandler = function() { self.stopRadioRefresh(state); };
+		document.addEventListener('visibilitychange', state.visibilityHandler);
+		window.addEventListener('pagehide', state.pageHideHandler);
+
+		return E('div', { 'class':'mt5700m-radio-refresh' }, [
+			state.refreshButton,
+			state.autoButton,
+			E('label', { 'class':'mt5700m-refresh-interval' }, [
+				_('Interval'), state.intervalInput, _('seconds')
 			]),
-			E('div', { 'class':'mt5700m-signal-value' }, [ E('strong', {}, isNaN(rsrp) ? '--' : String(data.rsrp)), E('span', {}, 'RSRP · dBm') ]),
-			E('div', { 'class':'mt5700m-signal-bars ' + quality.cls, 'aria-hidden':'true' }, bars),
-			E('div', { 'class':'mt5700m-signal-meta' }, [
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, 'RSRQ'), E('strong', {}, isNaN(rsrq) ? '--' : data.rsrq + ' dB') ]),
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, 'SINR'), E('strong', {}, isNaN(sinr) ? '--' : data.sinr + ' dB') ]),
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Temperature')), E('strong', {}, data.temperature ? data.temperature + '°C' : '--') ])
-			])
+			state.message
 		]);
 	},
 
-	carrierCard: function(info) {
+	signalCard: function(data, refs, refreshControls) {
+		refs.badge = E('span', { 'class':'mt5700m-badge' });
+		refs.rsrp = E('strong');
+		refs.bars = E('div', { 'class':'mt5700m-signal-bars', 'aria-hidden':'true' });
+		refs.rsrq = E('strong');
+		refs.sinr = E('strong');
+		var card = E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
+			E('div', { 'class':'mt5700m-focus-head' }, [
+				E('div', {}, [ E('div', { 'class':'mt5700m-focus-title' }, _('Signal')), E('div', { 'class':'mt5700m-focus-desc' }, _('Current radio quality at a glance')) ]),
+				refs.badge
+			]),
+			refreshControls,
+			E('div', { 'class':'mt5700m-signal-value' }, [ refs.rsrp, E('span', {}, 'RSRP · dBm') ]),
+			refs.bars,
+			E('div', { 'class':'mt5700m-signal-meta' }, [
+				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, 'RSRQ'), refs.rsrq ]),
+				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, 'SINR'), refs.sinr ]),
+				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Temperature')), E('strong', {}, data.temperature ? data.temperature + '°C' : '--') ])
+			])
+		]);
+		this.updateSignalCard(data, refs);
+		return card;
+	},
+
+	updateCarrierCard: function(info, refs) {
 		var active = info.active || info.dual;
 		var badge = !info.available ? _('Unavailable') : info.active ? _('Aggregating') : info.dual ? _('Dual connectivity') : _('Single carrier');
 		var headline = !info.available ? '--' : info.active ? info.count + 'CA' : info.dual ? (info.mode || 'EN-DC') : (info.carriers[0] ? info.carriers[0].band : _('Single carrier'));
-		return E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
+		refs.badge.className = 'mt5700m-badge' + (active ? ' active' : '');
+		dom.content(refs.badge, badge);
+		dom.content(refs.headline, headline);
+		dom.content(refs.mode, info.mode || _('Mobile network'));
+		dom.content(refs.bands, info.carriers.length ? info.carriers.map(function(item) {
+			return E('span', { 'class':'mt5700m-band' }, item.radio + ' · ' + item.band);
+		}) : E('span', { 'class':'mt5700m-focus-desc' }, _('Current carrier information is unavailable.')));
+		dom.content(refs.downlink, info.dlBandwidth ? info.dlBandwidth + ' MHz' : '--');
+		dom.content(refs.uplink, info.ulBandwidth ? info.ulBandwidth + ' MHz' : '--');
+	},
+
+	carrierCard: function(info, refs) {
+		refs.badge = E('span', { 'class':'mt5700m-badge' });
+		refs.headline = E('strong');
+		refs.mode = E('span');
+		refs.bands = E('div', { 'class':'mt5700m-band-list' });
+		refs.downlink = E('strong');
+		refs.uplink = E('strong');
+		var card = E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
 			E('div', { 'class':'mt5700m-focus-head' }, [
 				E('div', {}, [ E('div', { 'class':'mt5700m-focus-title' }, _('Carrier status')), E('div', { 'class':'mt5700m-focus-desc' }, _('Carrier aggregation and bandwidth')) ]),
-				E('span', { 'class':'mt5700m-badge' + (active ? ' active' : '') }, badge)
+				refs.badge
 			]),
-			E('div', { 'class':'mt5700m-carrier-main' }, [ E('strong', {}, headline), E('span', {}, info.mode || _('Mobile network')) ]),
-			E('div', { 'class':'mt5700m-band-list' }, info.carriers.length ? info.carriers.map(function(item) { return E('span', { 'class':'mt5700m-band' }, item.radio + ' · ' + item.band); }) : E('span', { 'class':'mt5700m-focus-desc' }, _('Current carrier information is unavailable.'))),
+			E('div', { 'class':'mt5700m-carrier-main' }, [ refs.headline, refs.mode ]),
+			refs.bands,
 			E('div', { 'class':'mt5700m-carrier-stats' }, [
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Downlink bandwidth')), E('strong', {}, info.dlBandwidth ? info.dlBandwidth + ' MHz' : '--') ]),
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Uplink bandwidth')), E('strong', {}, info.ulBandwidth ? info.ulBandwidth + ' MHz' : '--') ])
+				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Downlink bandwidth')), refs.downlink ]),
+				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Uplink bandwidth')), refs.uplink ])
 			]),
 			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/modem/mt5700m/network') }, _('View radio and cell details'))
 		]);
+		this.updateCarrierCard(info, refs);
+		return card;
 	},
 
 	addressCard: function(session) {
@@ -257,6 +474,19 @@ return view.extend({
 		var data = this.parseStatus(res), session = controls.parseSession(res.session && res.session.stdout || '');
 		var reachable = data.reachable === '1', connected = data.connected === '1', carrierInfo = this.carrierInfo(data);
 		var operator = data.operator || '';
+		if (this.radioRefreshState)
+			this.stopRadioRefresh(this.radioRefreshState);
+		var radioState = {
+			data:data,
+			signalRefs:{},
+			carrierRefs:{},
+			auto:false,
+			busy:false,
+			destroyed:false,
+			timer:null
+		};
+		this.radioRefreshState = radioState;
+		var refreshControls = this.radioRefreshControls(radioState);
 		if (!/[A-Za-z0-9\u4e00-\u9fff]/.test(operator)) operator = '';
 		var usbNames = { upgrade:_('Upgrade mode'), dump:_('Dump mode'), unknown:_('Unknown USB mode') };
 		var abnormalUsb = data.usb_state === 'upgrade' || data.usb_state === 'dump' || data.usb_state === 'unknown';
@@ -273,7 +503,11 @@ return view.extend({
 				]),
 				E('div', { 'class':'mt5700m-hero-side' }, [ E('div', { 'class':'mt5700m-status' + (connected ? ' online' : '') }, [ E('span', { 'class':'mt5700m-dot' }), connected ? _('Connected') : reachable ? _('Module online') : _('Unavailable') ]), E('button', { 'class':'btn mt5700m-refresh', 'click':function() { window.location.reload(); } }, _('Refresh')) ])
 			]),
-			E('div', { 'class':'mt5700m-focus-grid' }, [ this.signalCard(data), this.carrierCard(carrierInfo), this.addressCard(session) ]),
+			E('div', { 'class':'mt5700m-focus-grid' }, [
+				this.signalCard(data, radioState.signalRefs, refreshControls),
+				this.carrierCard(carrierInfo, radioState.carrierRefs),
+				this.addressCard(session)
+			]),
 			this.trafficPanel(res.traffic || {}, data.network_interface),
 			E('div', { 'class':'mt5700m-shortcuts' }, [
 				this.shortcut(_('Mobile data'), _('APN, dialing, IP details and session counters'), 'admin/modem/mt5700m/connection'),
@@ -281,6 +515,11 @@ return view.extend({
 				this.shortcut(_('Module and SIM'), _('Module identity, SIM information and maintenance'), 'admin/modem/mt5700m/system')
 			])
 		]);
+	},
+
+	remove: function() {
+		this.stopRadioRefresh(this.radioRefreshState);
+		this.radioRefreshState = null;
 	},
 
 	handleSave: null,

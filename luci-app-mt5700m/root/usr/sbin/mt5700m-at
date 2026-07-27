@@ -1181,6 +1181,13 @@ case "${1:-status}" in
 	temperature)
 		print_temperature
 		;;
+	radio-status)
+		# This endpoint is polled by the overview page. Keep each read-only
+		# modem query short so a slow AT channel cannot accumulate refreshes.
+		[ "${timeout_s}" -le 2 ] || timeout_s=2
+		print_signal
+		print_carrier_aggregation
+		;;
 	command)
 		shift
 		at_cmd "$*"
