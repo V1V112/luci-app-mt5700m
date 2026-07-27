@@ -78,24 +78,25 @@ function carrierMcs(records, position) {
 	return record && record.value || '--';
 }
 
-function carrierTableContent(info) {
-	var rows = [
-		E('div', { 'class':'mt5700m-carrier-row header' }, [
-			E('span', {}, _('Downlink bandwidth')),
-			E('span', {}, _('Downlink MCS')),
-			E('span', {}, _('Uplink bandwidth')),
-			E('span', {}, _('Uplink MCS'))
+function directionContent(label, carriers, bandwidthKey, mcsRecords) {
+	var content = [
+		E('div', { 'class':'mt5700m-direction-head' }, [
+			E('span', {}, label),
+			E('span', {}, 'MCS')
 		])
 	];
-	info.carriers.forEach(function(carrier, index) {
-		rows.push(E('div', { 'class':'mt5700m-carrier-row' }, [
-			E('span', { 'class':'bandwidth' }, '%s %s · %s MHz'.format(carrier.radio, carrier.band, carrier.dlBandwidth || '--')),
-			E('strong', { 'class':'mcs' }, carrierMcs(info.dlMcs, index)),
-			E('span', { 'class':'bandwidth' }, '%s %s · %s MHz'.format(carrier.radio, carrier.band, carrier.ulBandwidth || '--')),
-			E('strong', { 'class':'mcs' }, carrierMcs(info.ulMcs, index))
+	(carriers || []).forEach(function(carrier, index) {
+		content.push(E('div', { 'class':'mt5700m-direction-row' }, [
+			E('div', { 'class':'bandwidth' }, '%s · %s MHz'.format(String(carrier.band || '--').toUpperCase(), carrier[bandwidthKey] || '--')),
+			E('strong', { 'class':'mcs' }, carrierMcs(mcsRecords, index))
 		]));
 	});
-	return rows;
+	if (!carriers || !carriers.length)
+		content.push(E('div', { 'class':'mt5700m-direction-row' }, [
+			E('div', { 'class':'bandwidth' }, '--'),
+			E('strong', { 'class':'mcs' }, '--')
+		]));
+	return content;
 }
 
 function aggregateTraffic(interfaces) {
@@ -181,7 +182,7 @@ return view.extend({
 			'.mt5700m-radio-refresh{margin:-2px 0 11px;padding:0 0 10px;border-bottom:1px solid var(--mt-ui-border)}.mt5700m-radio-refresh-row{display:flex;align-items:center;gap:7px;overflow-x:auto;padding-bottom:2px;white-space:nowrap}.mt5700m-radio-refresh .btn{box-sizing:border-box;min-height:29px;padding:4px 9px;font-size:10px}.mt5700m-auto-toggle.active{border-color:#168b72!important;background:#e8f8f1!important;color:#087c60!important}.mt5700m-refresh-interval{display:inline-flex;align-items:center;gap:5px;height:29px;padding:4px 9px!important;font-size:10px;font-weight:inherit;white-space:nowrap}.mt5700m-refresh-interval input{box-sizing:border-box;width:45px;height:19px;padding:1px 3px;border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;color:inherit!important;caret-color:currentColor;text-align:center;-moz-appearance:textfield}.mt5700m-refresh-interval input::-webkit-inner-spin-button,.mt5700m-refresh-interval input::-webkit-outer-spin-button{margin:0;-webkit-appearance:none}.mt5700m-radio-refresh-state{display:block;min-height:13px;margin-top:6px;color:var(--mt-ui-muted);font-size:9px;line-height:1.35}.mt5700m-radio-refresh-state.error{color:#b84035}',
 			'.mt5700m-signal-value{display:flex;align-items:baseline;gap:6px}.mt5700m-signal-value strong{font-size:31px;letter-spacing:-.04em}.mt5700m-signal-value span{font-size:11px;color:var(--mt-ui-muted)}.mt5700m-signal-bars{display:flex;align-items:flex-end;gap:3px;height:52px;margin:5px 0 13px}.mt5700m-signal-bar{flex:1;min-width:2px;border-radius:2px 2px 1px 1px;background:var(--mt-ui-border);opacity:.55}.mt5700m-signal-bar.on{background:#4b94df;opacity:1}.mt5700m-signal-bars.excellent .on{background:#13a979}.mt5700m-signal-bars.good .on{background:#d8b42f}.mt5700m-signal-bars.fair .on{background:#e4872f}.mt5700m-signal-bars.weak .on{background:#db5b52}',
 			'.mt5700m-signal-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:auto}.mt5700m-mini{padding:8px;border:1px solid transparent;border-radius:9px;background:var(--background-color-low,#f5f7f9);transition:background-color .2s,border-color .2s}.mt5700m-mini span{display:block;margin-bottom:3px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-mini strong{font-size:12px;transition:color .2s}.mt5700m-mini.excellent{border-color:rgba(19,169,121,.28);background:rgba(19,169,121,.09)}.mt5700m-mini.excellent strong{color:#087c60}.mt5700m-mini.good{border-color:rgba(216,180,47,.34);background:rgba(216,180,47,.11)}.mt5700m-mini.good strong{color:#846900}.mt5700m-mini.fair{border-color:rgba(228,135,47,.34);background:rgba(228,135,47,.10)}.mt5700m-mini.fair strong{color:#9b5700}.mt5700m-mini.weak{border-color:rgba(219,91,82,.30);background:rgba(219,91,82,.09)}.mt5700m-mini.weak strong{color:#b84035}',
-			'.mt5700m-carrier-main{margin:2px 0 12px}.mt5700m-carrier-main strong{display:block;font-size:29px;line-height:1.15;letter-spacing:-.03em}.mt5700m-carrier-main span{display:block;margin-top:4px;color:var(--mt-ui-muted);font-size:11px}.mt5700m-band-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.mt5700m-band{padding:5px 8px;border-radius:8px;background:#edf5ff;color:#176bc1;font-size:10px;font-weight:700}.mt5700m-carrier-stats{margin-top:auto;border:1px solid var(--mt-ui-border);border-radius:9px;overflow-x:auto}.mt5700m-carrier-row{display:grid;grid-template-columns:minmax(112px,1.5fr) minmax(50px,.6fr) minmax(112px,1.5fr) minmax(50px,.6fr);align-items:center;gap:7px;min-width:370px;padding:8px 9px;font-size:10px}.mt5700m-carrier-row+.mt5700m-carrier-row{border-top:1px solid var(--mt-ui-border)}.mt5700m-carrier-row.header{background:var(--background-color-low,#f5f7f9);color:var(--mt-ui-muted);font-size:9px;font-weight:650}.mt5700m-carrier-row .bandwidth{white-space:nowrap}.mt5700m-carrier-row .mcs{text-align:center;font-size:11px;font-variant-numeric:tabular-nums}',
+			'.mt5700m-carrier-main{margin:2px 0 12px}.mt5700m-carrier-main strong{display:block;font-size:29px;line-height:1.15;letter-spacing:-.03em}.mt5700m-carrier-main span{display:block;margin-top:4px;color:var(--mt-ui-muted);font-size:11px}.mt5700m-band-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.mt5700m-band{padding:5px 8px;border-radius:8px;background:#edf5ff;color:#176bc1;font-size:10px;font-weight:700}.mt5700m-carrier-stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}.mt5700m-direction-head,.mt5700m-direction-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:6px}.mt5700m-direction-head span{margin:0}.mt5700m-direction-head span:last-child{text-align:right}.mt5700m-direction-row{margin-top:5px}.mt5700m-direction-row .bandwidth{overflow:hidden;font-size:12px;font-weight:700;line-height:1.25;white-space:nowrap;text-overflow:ellipsis}.mt5700m-direction-row .mcs{text-align:right;font-size:11px;font-variant-numeric:tabular-nums}',
 			'.mt5700m-ip-list{display:grid;gap:9px}.mt5700m-ip-row{padding:10px 11px;border-radius:10px;background:var(--background-color-low,#f5f7f9)}.mt5700m-ip-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px;font-size:10px;color:var(--mt-ui-muted)}.mt5700m-ip-state{font-weight:700;color:#9a6200}.mt5700m-ip-state.on{color:#087c60}.mt5700m-ip-value{font:600 12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.mt5700m-ip-meta{display:flex;justify-content:space-between;gap:10px;margin-top:9px;color:var(--mt-ui-muted);font-size:10px}',
 			'.mt5700m-card-link{display:inline-flex;align-items:center;gap:5px;margin-top:auto;padding-top:12px;color:#176bc1;font-size:10px;font-weight:700;text-decoration:none}.mt5700m-card-link:after{content:"›";font-size:16px;line-height:10px}',
 			'.mt5700m-traffic{padding:18px;margin-bottom:12px}.mt5700m-traffic-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.mt5700m-traffic-head h3{margin:0 0 4px;font-size:16px}.mt5700m-traffic-head p{margin:0;color:var(--mt-ui-muted);font-size:10px}.mt5700m-traffic-side{text-align:right}.mt5700m-updated{color:var(--mt-ui-muted);font-size:10px;white-space:nowrap}.mt5700m-legend{display:flex;justify-content:flex-end;gap:10px;margin-top:5px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-legend span:before{content:"";display:inline-block;width:7px;height:3px;margin-right:4px;border-radius:9px;background:#337de8;vertical-align:middle}.mt5700m-legend span:last-child:before{background:#16a085}',
@@ -470,7 +471,8 @@ return view.extend({
 		dom.content(refs.bands, info.carriers.length ? info.carriers.map(function(item) {
 			return E('span', { 'class':'mt5700m-band' }, item.radio + ' · ' + item.band);
 		}) : E('span', { 'class':'mt5700m-focus-desc' }, _('Current carrier information is unavailable.')));
-		dom.content(refs.stats, info.carriers.length ? carrierTableContent(info) : '--');
+		dom.content(refs.downlinkCard, directionContent(_('Downlink bandwidth'), info.carriers, 'dlBandwidth', info.dlMcs));
+		dom.content(refs.uplinkCard, directionContent(_('Uplink bandwidth'), info.carriers, 'ulBandwidth', info.ulMcs));
 	},
 
 	carrierCard: function(info, refs) {
@@ -478,7 +480,8 @@ return view.extend({
 		refs.headline = E('strong');
 		refs.mode = E('span');
 		refs.bands = E('div', { 'class':'mt5700m-band-list' });
-		refs.stats = E('div', { 'class':'mt5700m-carrier-stats' });
+		refs.downlinkCard = E('div', { 'class':'mt5700m-mini mt5700m-direction-card' });
+		refs.uplinkCard = E('div', { 'class':'mt5700m-mini mt5700m-direction-card' });
 		var card = E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
 			E('div', { 'class':'mt5700m-focus-head' }, [
 				E('div', {}, [ E('div', { 'class':'mt5700m-focus-title' }, _('Carrier status')), E('div', { 'class':'mt5700m-focus-desc' }, _('Carrier aggregation and bandwidth')) ]),
@@ -486,7 +489,10 @@ return view.extend({
 			]),
 			E('div', { 'class':'mt5700m-carrier-main' }, [ refs.headline, refs.mode ]),
 			refs.bands,
-			refs.stats,
+			E('div', { 'class':'mt5700m-carrier-stats' }, [
+				refs.downlinkCard,
+				refs.uplinkCard
+			]),
 			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/modem/mt5700m/network') }, _('View radio and cell details'))
 		]);
 		this.updateCarrierCard(info, refs);
