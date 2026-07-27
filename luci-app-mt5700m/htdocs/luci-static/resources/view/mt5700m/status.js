@@ -49,32 +49,53 @@ function trafficUpdated(iface) {
 		value.date.day || 0, value.time && value.time.hour || 0, value.time && value.time.minute || 0);
 }
 
-function formatMcs(value) {
+function parseMcs(value) {
 	return String(value || '').split('|').map(function(record) {
 		var values = record.split(',');
-		var codewords;
-		if (values.length < 4 || values[2] !== '1')
-			return '';
-		codewords = values.slice(3).filter(function(item) {
-			return /^\d+$/.test(item) && item !== '255';
-		});
-		return codewords.join(' / ');
-	}).filter(Boolean);
-}
-
-function mcsContent(values) {
-	return values.length ? values.map(function(value) {
-		return E('span', {}, value);
-	}) : '--';
-}
-
-function bandwidthContent(carriers, key) {
-	var values = (carriers || []).map(function(carrier) {
-		if (!carrier[key])
+		var codewords, carrierIndex;
+		if (values.length < 4)
 			return null;
-		return E('span', {}, '%s %s · %s MHz'.format(carrier.radio, carrier.band, carrier[key]));
+		carrierIndex = parseInt(values[1], 10);
+		codewords = values[2] === '1' ? values.slice(3).filter(function(item) {
+			return /^\d+$/.test(item) && item !== '255';
+		}) : [];
+		return {
+			carrierIndex:isNaN(carrierIndex) ? 0 : carrierIndex,
+			value:codewords.join(' / ')
+		};
 	}).filter(Boolean);
-	return values.length ? values : '--';
+}
+
+function carrierMcs(records, position) {
+	var uniqueIndexes = records.length > 0 && records.every(function(record, index) {
+		return record.carrierIndex > 0 && records.every(function(other, otherIndex) {
+			return index === otherIndex || record.carrierIndex !== other.carrierIndex;
+		});
+	});
+	var record = uniqueIndexes
+		? records.filter(function(item) { return item.carrierIndex === position + 1; })[0]
+		: records[position];
+	return record && record.value || '--';
+}
+
+function carrierTableContent(info) {
+	var rows = [
+		E('div', { 'class':'mt5700m-carrier-row header' }, [
+			E('span', {}, _('Downlink bandwidth')),
+			E('span', {}, _('Downlink MCS')),
+			E('span', {}, _('Uplink bandwidth')),
+			E('span', {}, _('Uplink MCS'))
+		])
+	];
+	info.carriers.forEach(function(carrier, index) {
+		rows.push(E('div', { 'class':'mt5700m-carrier-row' }, [
+			E('span', { 'class':'bandwidth' }, '%s %s · %s MHz'.format(carrier.radio, carrier.band, carrier.dlBandwidth || '--')),
+			E('strong', { 'class':'mcs' }, carrierMcs(info.dlMcs, index)),
+			E('span', { 'class':'bandwidth' }, '%s %s · %s MHz'.format(carrier.radio, carrier.band, carrier.ulBandwidth || '--')),
+			E('strong', { 'class':'mcs' }, carrierMcs(info.ulMcs, index))
+		]));
+	});
+	return rows;
 }
 
 function aggregateTraffic(interfaces) {
@@ -155,12 +176,12 @@ return view.extend({
 			'.mt5700m-title{margin:0 0 6px;color:#fff;font-size:27px;line-height:1.2}.mt5700m-summary{font-size:13px;line-height:1.5;color:rgba(255,255,255,.84)}',
 			'.mt5700m-hero-meta{display:flex;flex-wrap:wrap;gap:7px 18px;margin-top:13px;font-size:11px;color:rgba(255,255,255,.72)}.mt5700m-hero-meta strong{margin-left:5px;color:#fff;font-weight:700}',
 			'.mt5700m-hero-side{display:flex;flex-direction:column;align-items:flex-end;gap:10px}.mt5700m-status{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.16);font-size:12px;font-weight:700;white-space:nowrap}.mt5700m-dot{width:8px;height:8px;border-radius:50%;background:#ffcd57;box-shadow:0 0 0 4px rgba(255,205,87,.18)}.mt5700m-status.online .mt5700m-dot{background:#78f2b0;box-shadow:0 0 0 4px rgba(120,242,176,.18)}.mt5700m-refresh{border-color:rgba(255,255,255,.30)!important;background:rgba(255,255,255,.10)!important;color:#fff!important}',
-			'.mt5700m-focus-grid{display:grid;grid-template-columns:1.12fr .88fr 1.18fr;gap:12px;margin-bottom:12px}.mt5700m-focus{display:flex;flex-direction:column;min-height:230px;padding:17px 18px}.mt5700m-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:13px}.mt5700m-focus-title{font-size:14px;font-weight:750}.mt5700m-focus-desc{margin-top:3px;color:var(--mt-ui-muted);font-size:10px;line-height:1.4}',
+			'.mt5700m-focus-grid{display:grid;grid-template-columns:1fr 1.28fr .9fr;gap:12px;margin-bottom:12px}.mt5700m-focus{display:flex;flex-direction:column;min-height:230px;padding:17px 18px}.mt5700m-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:13px}.mt5700m-focus-title{font-size:14px;font-weight:750}.mt5700m-focus-desc{margin-top:3px;color:var(--mt-ui-muted);font-size:10px;line-height:1.4}',
 			'.mt5700m-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:#eef2f6;color:#6b7480;font-size:10px;font-weight:750;white-space:nowrap}.mt5700m-badge:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.mt5700m-badge.excellent,.mt5700m-badge.active{background:#e8f8f1;color:#087c60}.mt5700m-badge.good{background:#fff9d9;color:#846900}.mt5700m-badge.fair{background:#fff0d8;color:#9b5700}.mt5700m-badge.weak{background:#fff0ee;color:#b84035}',
 			'.mt5700m-radio-refresh{margin:-2px 0 11px;padding:0 0 10px;border-bottom:1px solid var(--mt-ui-border)}.mt5700m-radio-refresh-row{display:flex;align-items:center;gap:7px;overflow-x:auto;padding-bottom:2px;white-space:nowrap}.mt5700m-radio-refresh .btn{box-sizing:border-box;min-height:29px;padding:4px 9px;font-size:10px}.mt5700m-auto-toggle.active{border-color:#168b72!important;background:#e8f8f1!important;color:#087c60!important}.mt5700m-refresh-interval{display:inline-flex;align-items:center;gap:5px;height:29px;padding:4px 9px!important;font-size:10px;font-weight:inherit;white-space:nowrap}.mt5700m-refresh-interval input{box-sizing:border-box;width:45px;height:19px;padding:1px 3px;border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;color:inherit!important;caret-color:currentColor;text-align:center;-moz-appearance:textfield}.mt5700m-refresh-interval input::-webkit-inner-spin-button,.mt5700m-refresh-interval input::-webkit-outer-spin-button{margin:0;-webkit-appearance:none}.mt5700m-radio-refresh-state{display:block;min-height:13px;margin-top:6px;color:var(--mt-ui-muted);font-size:9px;line-height:1.35}.mt5700m-radio-refresh-state.error{color:#b84035}',
 			'.mt5700m-signal-value{display:flex;align-items:baseline;gap:6px}.mt5700m-signal-value strong{font-size:31px;letter-spacing:-.04em}.mt5700m-signal-value span{font-size:11px;color:var(--mt-ui-muted)}.mt5700m-signal-bars{display:flex;align-items:flex-end;gap:3px;height:52px;margin:5px 0 13px}.mt5700m-signal-bar{flex:1;min-width:2px;border-radius:2px 2px 1px 1px;background:var(--mt-ui-border);opacity:.55}.mt5700m-signal-bar.on{background:#4b94df;opacity:1}.mt5700m-signal-bars.excellent .on{background:#13a979}.mt5700m-signal-bars.good .on{background:#d8b42f}.mt5700m-signal-bars.fair .on{background:#e4872f}.mt5700m-signal-bars.weak .on{background:#db5b52}',
 			'.mt5700m-signal-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:auto}.mt5700m-mini{padding:8px;border:1px solid transparent;border-radius:9px;background:var(--background-color-low,#f5f7f9);transition:background-color .2s,border-color .2s}.mt5700m-mini span{display:block;margin-bottom:3px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-mini strong{font-size:12px;transition:color .2s}.mt5700m-mini.excellent{border-color:rgba(19,169,121,.28);background:rgba(19,169,121,.09)}.mt5700m-mini.excellent strong{color:#087c60}.mt5700m-mini.good{border-color:rgba(216,180,47,.34);background:rgba(216,180,47,.11)}.mt5700m-mini.good strong{color:#846900}.mt5700m-mini.fair{border-color:rgba(228,135,47,.34);background:rgba(228,135,47,.10)}.mt5700m-mini.fair strong{color:#9b5700}.mt5700m-mini.weak{border-color:rgba(219,91,82,.30);background:rgba(219,91,82,.09)}.mt5700m-mini.weak strong{color:#b84035}',
-			'.mt5700m-carrier-main{margin:2px 0 12px}.mt5700m-carrier-main strong{display:block;font-size:29px;line-height:1.15;letter-spacing:-.03em}.mt5700m-carrier-main span{display:block;margin-top:4px;color:var(--mt-ui-muted);font-size:11px}.mt5700m-band-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.mt5700m-band{padding:5px 8px;border-radius:8px;background:#edf5ff;color:#176bc1;font-size:10px;font-weight:700}.mt5700m-carrier-stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}.mt5700m-bandwidth-value,.mt5700m-mcs-value{display:flex;flex-direction:column;gap:2px}.mt5700m-bandwidth-value span,.mt5700m-mcs-value span{margin:0;color:inherit;font-size:11px;line-height:1.25}',
+			'.mt5700m-carrier-main{margin:2px 0 12px}.mt5700m-carrier-main strong{display:block;font-size:29px;line-height:1.15;letter-spacing:-.03em}.mt5700m-carrier-main span{display:block;margin-top:4px;color:var(--mt-ui-muted);font-size:11px}.mt5700m-band-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.mt5700m-band{padding:5px 8px;border-radius:8px;background:#edf5ff;color:#176bc1;font-size:10px;font-weight:700}.mt5700m-carrier-stats{margin-top:auto;border:1px solid var(--mt-ui-border);border-radius:9px;overflow-x:auto}.mt5700m-carrier-row{display:grid;grid-template-columns:minmax(112px,1.5fr) minmax(50px,.6fr) minmax(112px,1.5fr) minmax(50px,.6fr);align-items:center;gap:7px;min-width:370px;padding:8px 9px;font-size:10px}.mt5700m-carrier-row+.mt5700m-carrier-row{border-top:1px solid var(--mt-ui-border)}.mt5700m-carrier-row.header{background:var(--background-color-low,#f5f7f9);color:var(--mt-ui-muted);font-size:9px;font-weight:650}.mt5700m-carrier-row .bandwidth{white-space:nowrap}.mt5700m-carrier-row .mcs{text-align:center;font-size:11px;font-variant-numeric:tabular-nums}',
 			'.mt5700m-ip-list{display:grid;gap:9px}.mt5700m-ip-row{padding:10px 11px;border-radius:10px;background:var(--background-color-low,#f5f7f9)}.mt5700m-ip-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px;font-size:10px;color:var(--mt-ui-muted)}.mt5700m-ip-state{font-weight:700;color:#9a6200}.mt5700m-ip-state.on{color:#087c60}.mt5700m-ip-value{font:600 12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.mt5700m-ip-meta{display:flex;justify-content:space-between;gap:10px;margin-top:9px;color:var(--mt-ui-muted);font-size:10px}',
 			'.mt5700m-card-link{display:inline-flex;align-items:center;gap:5px;margin-top:auto;padding-top:12px;color:#176bc1;font-size:10px;font-weight:700;text-decoration:none}.mt5700m-card-link:after{content:"›";font-size:16px;line-height:10px}',
 			'.mt5700m-traffic{padding:18px;margin-bottom:12px}.mt5700m-traffic-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.mt5700m-traffic-head h3{margin:0 0 4px;font-size:16px}.mt5700m-traffic-head p{margin:0;color:var(--mt-ui-muted);font-size:10px}.mt5700m-traffic-side{text-align:right}.mt5700m-updated{color:var(--mt-ui-muted);font-size:10px;white-space:nowrap}.mt5700m-legend{display:flex;justify-content:flex-end;gap:10px;margin-top:5px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-legend span:before{content:"";display:inline-block;width:7px;height:3px;margin-right:4px;border-radius:9px;background:#337de8;vertical-align:middle}.mt5700m-legend span:last-child:before{background:#16a085}',
@@ -207,7 +228,7 @@ return view.extend({
 			available:carriers.length > 0,
 			active:data.ca_active === '1' && carriers.length > 1,
 			dual:data.dc_active === '1', mode:data.ca_mode || '', count:carriers.length,
-			dlMcs:formatMcs(data.downlink_mcs), ulMcs:formatMcs(data.uplink_mcs), carriers:carriers
+			dlMcs:parseMcs(data.downlink_mcs), ulMcs:parseMcs(data.uplink_mcs), carriers:carriers
 		};
 	},
 
@@ -449,10 +470,7 @@ return view.extend({
 		dom.content(refs.bands, info.carriers.length ? info.carriers.map(function(item) {
 			return E('span', { 'class':'mt5700m-band' }, item.radio + ' · ' + item.band);
 		}) : E('span', { 'class':'mt5700m-focus-desc' }, _('Current carrier information is unavailable.')));
-		dom.content(refs.downlink, bandwidthContent(info.carriers, 'dlBandwidth'));
-		dom.content(refs.uplink, bandwidthContent(info.carriers, 'ulBandwidth'));
-		dom.content(refs.downlinkMcs, mcsContent(info.dlMcs));
-		dom.content(refs.uplinkMcs, mcsContent(info.ulMcs));
+		dom.content(refs.stats, info.carriers.length ? carrierTableContent(info) : '--');
 	},
 
 	carrierCard: function(info, refs) {
@@ -460,10 +478,7 @@ return view.extend({
 		refs.headline = E('strong');
 		refs.mode = E('span');
 		refs.bands = E('div', { 'class':'mt5700m-band-list' });
-		refs.downlink = E('strong', { 'class':'mt5700m-bandwidth-value' });
-		refs.uplink = E('strong', { 'class':'mt5700m-bandwidth-value' });
-		refs.downlinkMcs = E('strong', { 'class':'mt5700m-mcs-value' });
-		refs.uplinkMcs = E('strong', { 'class':'mt5700m-mcs-value' });
+		refs.stats = E('div', { 'class':'mt5700m-carrier-stats' });
 		var card = E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
 			E('div', { 'class':'mt5700m-focus-head' }, [
 				E('div', {}, [ E('div', { 'class':'mt5700m-focus-title' }, _('Carrier status')), E('div', { 'class':'mt5700m-focus-desc' }, _('Carrier aggregation and bandwidth')) ]),
@@ -471,12 +486,7 @@ return view.extend({
 			]),
 			E('div', { 'class':'mt5700m-carrier-main' }, [ refs.headline, refs.mode ]),
 			refs.bands,
-			E('div', { 'class':'mt5700m-carrier-stats' }, [
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Downlink bandwidth')), refs.downlink ]),
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Downlink MCS')), refs.downlinkMcs ]),
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Uplink bandwidth')), refs.uplink ]),
-				E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Uplink MCS')), refs.uplinkMcs ])
-			]),
+			refs.stats,
 			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/modem/mt5700m/network') }, _('View radio and cell details'))
 		]);
 		this.updateCarrierCard(info, refs);
