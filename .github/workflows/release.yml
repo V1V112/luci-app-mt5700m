@@ -13,7 +13,13 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Prepare artifact name
+        id: artifact
+        shell: bash
+        run: |
+          safe_ref="$(printf '%s' "${GITHUB_REF_NAME}" | tr -c 'A-Za-z0-9._-' '-')"
+          printf 'name=luci-app-mt5700m-%s\n' "${safe_ref}" >> "${GITHUB_OUTPUT}"
       - name: Validate release version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -25,9 +31,9 @@ jobs:
           sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file curl zstd
       - name: Build with the official OpenWrt SDK
         run: ./scripts/build-release.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
-          name: luci-app-mt5700m-${{ github.ref_name }}
+          name: ${{ steps.artifact.outputs.name }}
           path: dist-release/*
           if-no-files-found: error
       - name: Publish GitHub Release
