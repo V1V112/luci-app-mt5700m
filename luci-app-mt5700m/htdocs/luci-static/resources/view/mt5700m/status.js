@@ -142,8 +142,8 @@ return view.extend({
 	load: function() {
 		return callManagerStatus().catch(function() { return {}; }).then(function(manager) {
 			return Promise.all([
-				fs.exec('/usr/sbin/mt5700m-at', [ 'status' ]).catch(function(err) { return { stdout:'', stderr:err.message || String(err) }; }),
-				fs.exec('/usr/sbin/mt5700m-at', [ 'advanced', 'session' ]).catch(function(err) { return { stdout:'', stderr:err.message || String(err) }; }),
+				fs.exec('/usr/sbin/mt5700m-read', [ 'status' ]).catch(function(err) { return { stdout:'', stderr:err.message || String(err) }; }),
+				fs.exec('/usr/sbin/mt5700m-read', [ 'advanced', 'session' ]).catch(function(err) { return { stdout:'', stderr:err.message || String(err) }; }),
 				callTraffic().catch(function() { return { interfaces:[] }; })
 			]).then(function(results) {
 				return { native:results[0], session:results[1], traffic:results[2], manager:manager };
@@ -317,7 +317,7 @@ return view.extend({
 		state.message.title = '';
 		dom.content(state.message, _('Refreshing signal and carrier status…'));
 
-		return fs.exec('/usr/sbin/mt5700m-at', [ 'radio-status' ]).then(function(result) {
+		return fs.exec('/usr/sbin/mt5700m-read', [ 'radio-status' ]).then(function(result) {
 			var fresh = parseKeyValues(result.stdout || '');
 			var signalKeys = [ 'sysmode', 'rsrp', 'rsrq', 'sinr', 'rssi', 'rscp', 'ecio' ];
 			var carrierKeys = [

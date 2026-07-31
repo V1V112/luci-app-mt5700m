@@ -64,4 +64,31 @@ output="$(
 )"
 printf '%s\n' "${output}" | grep -q '"name":"rmnet-test"'
 
-echo 'traffic interface tests passed'
+UCI_RUNTIME_DIR="${FIXTURE}/uci-runtime"
+UCI_HISTORY_FILE="${FIXTURE}/uci-history"
+mkdir -p "${FIXTURE}/bin" "${UCI_RUNTIME_DIR}"
+cat >"${FIXTURE}/bin/uci" <<'EOF'
+#!/bin/sh
+case "$*" in
+	'-q get network.MT5700M.device') echo wwan42 ;;
+	*) exit 1 ;;
+esac
+EOF
+chmod 0755 "${FIXTURE}/bin/uci"
+
+PATH="${FIXTURE}/bin:${PATH}" \
+MT5700M_USB_HELPER="${FIXTURE}/missing-usb.sh" \
+MT5700M_TRAFFIC_RUNTIME_DIR="${UCI_RUNTIME_DIR}" \
+MT5700M_TRAFFIC_HISTORY_FILE="${UCI_HISTORY_FILE}" \
+	sh "${TRAFFIC}" update '' 10 20 2026-07-30 12:00
+
+output="$(PATH="${FIXTURE}/bin:${PATH}" \
+	MT5700M_USB_HELPER="${FIXTURE}/missing-usb.sh" \
+	MT5700M_TRAFFIC_RUNTIME_DIR="${UCI_RUNTIME_DIR}" \
+	MT5700M_TRAFFIC_HISTORY_FILE="${UCI_HISTORY_FILE}" \
+	sh "${TRAFFIC}" json)"
+printf '%s\n' "${output}" | grep -q '"name":"wwan42"'
+printf '%s\n' "${output}" | grep -q '"rx":10'
+printf '%s\n' "${output}" | grep -q '"tx":20'
+
+echo 'dynamic traffic interface tests passed'

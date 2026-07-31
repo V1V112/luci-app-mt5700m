@@ -22,16 +22,29 @@ valid_netdev() {
 }
 
 traffic_interfaces() {
-	local netdev
+	local netdev configured
 
 	if [ -n "${CONFIGURED_INTERFACES}" ]; then
 		for netdev in ${CONFIGURED_INTERFACES}; do
 			valid_netdev "${netdev}" && printf '%s\n' "${netdev}"
 		done
-	elif command -v mt5700m_netdev >/dev/null 2>&1; then
-		netdev="$(mt5700m_netdev 2>/dev/null || true)"
-		valid_netdev "${netdev}" && printf '%s\n' "${netdev}"
+		return 0
 	fi
+
+	if command -v mt5700m_netdev >/dev/null 2>&1; then
+		netdev="$(mt5700m_netdev 2>/dev/null || true)"
+		if valid_netdev "${netdev}"; then
+			printf '%s\n' "${netdev}"
+			return 0
+		fi
+	fi
+
+	# Fall back to the conventional UCI section when USB discovery is not
+	# available yet. Never fall back to a hard-coded kernel interface name.
+	configured="$(uci -q get network.MT5700M.device 2>/dev/null ||
+		uci -q get network.MT5700M.ifname 2>/dev/null || true)"
+	case "${configured}" in ''|'@'*) return 0 ;; esac
+	valid_netdev "${configured}" && printf '%s\n' "${configured}"
 }
 
 export_interfaces() {
@@ -41,7 +54,6 @@ export_interfaces() {
 			awk '$1 == "total" { print $2 }' "${RUNTIME_FILE}"
 	} | awk 'NF && !seen[$0]++ { print }'
 }
-
 ensure_history() {
 	mkdir -p "${RUNTIME_DIR}" "${HISTORY_FILE%/*}"
 	if [ ! -f "${RUNTIME_FILE}" ]; then

@@ -7,8 +7,12 @@ TRAFFIC_SERVICE="${MT5700M_TRAFFIC_SERVICE:-/etc/init.d/mt5700m-traffic}"
 [ -r "${USB_HELPER}" ] && . "${USB_HELPER}"
 
 case "${ACTION:-}" in add|register|ifup) ;; *) exit 0 ;; esac
-command -v mt5700m_netdev >/dev/null 2>&1 || exit 0
-netdev="$(mt5700m_netdev 2>/dev/null || true)"
+netdev=''
+if command -v mt5700m_netdev >/dev/null 2>&1; then
+	netdev="$(mt5700m_netdev 2>/dev/null || true)"
+fi
+[ -n "${netdev}" ] || netdev="$(uci -q get network.MT5700M.device 2>/dev/null ||
+	uci -q get network.MT5700M.ifname 2>/dev/null || true)"
 [ -n "${netdev}" ] || exit 0
 [ "${DEVICE:-}" = "${netdev}" ] || [ "${INTERFACE:-}" = "${netdev}" ] || exit 0
 
