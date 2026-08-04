@@ -99,6 +99,27 @@ function directionContent(label, carriers, bandwidthKey, mcsRecords) {
 	return content;
 }
 
+function metricGauge(label, scaleLow, scaleHigh) {
+	var value = E('strong');
+	var fill = E('i', { 'style':'width:0%' });
+	return {
+		value:value,
+		fill:fill,
+		box:E('div', { 'class':'mt5700m-mini' }, [
+			E('div', { 'class':'mt5700m-mini-top' }, [ E('span', {}, label), value ]),
+			E('div', { 'class':'mt5700m-gauge-track', 'aria-hidden':'true' }, [ fill ]),
+			E('div', { 'class':'mt5700m-mini-scale' }, [ E('span', {}, scaleLow), E('span', {}, scaleHigh) ])
+		])
+	};
+}
+
+function updateMetricGauge(gauge, quality, hasValue) {
+	// Keep an in-range colour cue visible for valid readings at or below the scale floor.
+	var percentage = hasValue ? Math.max(4, Math.min(100, quality.percentage)) : 0;
+	gauge.box.className = 'mt5700m-mini ' + quality.cls;
+	gauge.fill.style.width = percentage.toFixed(1).replace(/\.0$/, '') + '%';
+}
+
 function aggregateTraffic(interfaces) {
 	var totals = { rx:0, tx:0 }, days = {}, months = {}, updated = null, updatedKey = '';
 
@@ -181,7 +202,8 @@ return view.extend({
 			'.mt5700m-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:999px;background:#eef2f6;color:#6b7480;font-size:10px;font-weight:750;white-space:nowrap}.mt5700m-badge:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.mt5700m-badge.excellent,.mt5700m-badge.active{background:#e8f8f1;color:#087c60}.mt5700m-badge.good{background:#fff9d9;color:#846900}.mt5700m-badge.fair{background:#fff0d8;color:#9b5700}.mt5700m-badge.weak{background:#fff0ee;color:#b84035}',
 			'.mt5700m-radio-refresh{margin:-2px 0 11px;padding:0 0 10px;border-bottom:1px solid var(--mt-ui-border)}.mt5700m-radio-refresh-row{display:flex;align-items:center;gap:7px;overflow-x:auto;padding-bottom:2px;white-space:nowrap}.mt5700m-radio-refresh .btn{box-sizing:border-box;min-height:29px;padding:4px 9px;font-size:10px}.mt5700m-auto-toggle.active{border-color:#168b72!important;background:#e8f8f1!important;color:#087c60!important}.mt5700m-refresh-interval{display:inline-flex;align-items:center;gap:5px;height:29px;padding:4px 9px!important;font-size:10px;font-weight:inherit;white-space:nowrap}.mt5700m-refresh-interval input{box-sizing:border-box;width:45px;height:19px;padding:1px 3px;border:0!important;outline:0!important;background:transparent!important;box-shadow:none!important;color:inherit!important;caret-color:currentColor;text-align:center;-moz-appearance:textfield}.mt5700m-refresh-interval input::-webkit-inner-spin-button,.mt5700m-refresh-interval input::-webkit-outer-spin-button{margin:0;-webkit-appearance:none}.mt5700m-radio-refresh-state{display:block;min-height:13px;margin-top:6px;color:var(--mt-ui-muted);font-size:9px;line-height:1.35}.mt5700m-radio-refresh-state.error{color:#b84035}',
 			'.mt5700m-signal-value{display:flex;align-items:baseline;gap:6px}.mt5700m-signal-value strong{font-size:31px;letter-spacing:-.04em}.mt5700m-signal-value span{font-size:11px;color:var(--mt-ui-muted)}.mt5700m-signal-bars{display:flex;align-items:flex-end;gap:3px;height:52px;margin:5px 0 13px}.mt5700m-signal-bar{flex:1;min-width:2px;border-radius:2px 2px 1px 1px;background:var(--mt-ui-border);opacity:.55}.mt5700m-signal-bar.on{background:#4b94df;opacity:1}.mt5700m-signal-bars.excellent .on{background:#13a979}.mt5700m-signal-bars.good .on{background:#d8b42f}.mt5700m-signal-bars.fair .on{background:#e4872f}.mt5700m-signal-bars.weak .on{background:#db5b52}',
-			'.mt5700m-signal-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:auto}.mt5700m-mini{padding:8px;border:1px solid transparent;border-radius:9px;background:var(--background-color-low,#f5f7f9);transition:background-color .2s,border-color .2s}.mt5700m-mini span{display:block;margin-bottom:3px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-mini strong{font-size:12px;transition:color .2s}.mt5700m-mini.excellent{border-color:rgba(19,169,121,.28);background:rgba(19,169,121,.09)}.mt5700m-mini.excellent strong{color:#087c60}.mt5700m-mini.good{border-color:rgba(216,180,47,.34);background:rgba(216,180,47,.11)}.mt5700m-mini.good strong{color:#846900}.mt5700m-mini.fair{border-color:rgba(228,135,47,.34);background:rgba(228,135,47,.10)}.mt5700m-mini.fair strong{color:#9b5700}.mt5700m-mini.weak{border-color:rgba(219,91,82,.30);background:rgba(219,91,82,.09)}.mt5700m-mini.weak strong{color:#b84035}',
+			'.mt5700m-signal-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:auto}.mt5700m-mini{--mt5700m-gauge-color:#4b94df;padding:8px;border:1px solid transparent;border-radius:9px;background:var(--background-color-low,#f5f7f9);transition:background-color .2s,border-color .2s}.mt5700m-mini span{display:block;margin-bottom:3px;color:var(--mt-ui-muted);font-size:9px}.mt5700m-mini strong{font-size:12px;font-variant-numeric:tabular-nums;transition:color .2s}.mt5700m-mini.unknown{--mt5700m-gauge-color:var(--mt-ui-border,#cfd6de)}.mt5700m-mini.excellent{--mt5700m-gauge-color:#13a979;border-color:rgba(19,169,121,.28);background:rgba(19,169,121,.09)}.mt5700m-mini.excellent strong{color:#087c60}.mt5700m-mini.good{--mt5700m-gauge-color:#d8b42f;border-color:rgba(216,180,47,.34);background:rgba(216,180,47,.11)}.mt5700m-mini.good strong{color:#846900}.mt5700m-mini.fair{--mt5700m-gauge-color:#e4872f;border-color:rgba(228,135,47,.34);background:rgba(228,135,47,.10)}.mt5700m-mini.fair strong{color:#9b5700}.mt5700m-mini.weak{--mt5700m-gauge-color:#db5b52;border-color:rgba(219,91,82,.30);background:rgba(219,91,82,.09)}.mt5700m-mini.weak strong{color:#b84035}',
+			'.mt5700m-mini-top{margin-bottom:6px}.mt5700m-gauge-track{height:6px;overflow:hidden;border-radius:999px;background:var(--mt-ui-border,#e3e8ee)}.mt5700m-gauge-track i{display:block;height:100%;border-radius:inherit;background:var(--mt5700m-gauge-color);transition:width .35s ease,background-color .2s}.mt5700m-mini-scale{display:flex;justify-content:space-between;margin-top:3px;color:var(--mt-ui-muted);font-size:8px;font-variant-numeric:tabular-nums;opacity:.75}.mt5700m-mini-scale span{margin:0;font-size:inherit}',
 			'.mt5700m-carrier-main{margin:2px 0 12px}.mt5700m-carrier-main strong{display:block;font-size:29px;line-height:1.15;letter-spacing:-.03em}.mt5700m-carrier-main span{display:block;margin-top:4px;color:var(--mt-ui-muted);font-size:11px}.mt5700m-band-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.mt5700m-band{padding:5px 8px;border-radius:8px;background:#edf5ff;color:#176bc1;font-size:10px;font-weight:700}.mt5700m-carrier-stats{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}.mt5700m-direction-head,.mt5700m-direction-row{display:grid;grid-template-columns:minmax(0,1fr) 44px;align-items:center;gap:6px}.mt5700m-direction-head span{margin:0}.mt5700m-direction-head span:last-child{text-align:right}.mt5700m-direction-row{margin-top:5px}.mt5700m-direction-row .bandwidth{overflow:hidden;font-size:12px;font-weight:700;line-height:1.25;white-space:nowrap;text-overflow:ellipsis}.mt5700m-direction-row .mcs{text-align:right;font-size:11px;font-variant-numeric:tabular-nums}',
 			'.mt5700m-ip-list{display:grid;gap:9px}.mt5700m-ip-row{padding:10px 11px;border-radius:10px;background:var(--background-color-low,#f5f7f9)}.mt5700m-ip-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px;font-size:10px;color:var(--mt-ui-muted)}.mt5700m-ip-state{font-weight:700;color:#9a6200}.mt5700m-ip-state.on{color:#087c60}.mt5700m-ip-value{font:600 12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}.mt5700m-ip-meta{display:flex;justify-content:space-between;gap:10px;margin-top:9px;color:var(--mt-ui-muted);font-size:10px}',
 			'.mt5700m-card-link{display:inline-flex;align-items:center;gap:5px;margin-top:auto;padding-top:12px;color:#176bc1;font-size:10px;font-weight:700;text-decoration:none}.mt5700m-card-link:after{content:"›";font-size:16px;line-height:10px}',
@@ -199,7 +221,7 @@ return view.extend({
 		if (isNaN(value))
 			return { label:_('No data'), cls:'unknown', percentage:0 };
 		if (kind === 'rsrp') { percentage = (value + 120) * 2.5; levels = [ -80, -90, -100 ]; }
-		else if (kind === 'rsrq') { percentage = (value + 25) * 4; levels = [ -10, -15, -20 ]; }
+		else if (kind === 'rsrq') { percentage = (value + 25) / 22 * 100; levels = [ -10, -15, -20 ]; }
 		else { percentage = (value + 10) * 2.5; levels = [ 20, 13, 0 ]; }
 		index = value >= levels[0] ? 0 : value >= levels[1] ? 1 : value >= levels[2] ? 2 : 3;
 		return {
@@ -211,9 +233,10 @@ return view.extend({
 
 	temperatureQuality: function(value) {
 		if (isNaN(value))
-			return { cls:'unknown' };
+			return { cls:'unknown', percentage:0 };
 		return {
-			cls:value < 45 ? 'excellent' : value < 50 ? 'good' : value < 60 ? 'fair' : 'weak'
+			cls:value < 45 ? 'excellent' : value < 50 ? 'good' : value < 60 ? 'fair' : 'weak',
+			percentage:Math.max(0, Math.min(100, (value - 20) / 60 * 100))
 		};
 	},
 
@@ -236,6 +259,7 @@ return view.extend({
 	updateSignalCard: function(data, refs) {
 		var rsrp = parseFloat(data.rsrp), rsrq = parseFloat(data.rsrq), sinr = parseFloat(data.sinr), temperature = parseFloat(data.temperature);
 		var quality = this.signalQuality('rsrp', rsrp), active = isNaN(rsrp) ? 0 : Math.max(1, Math.round(quality.percentage / 100 * 14));
+		var rsrqQuality = this.signalQuality('rsrq', rsrq), sinrQuality = this.signalQuality('sinr', sinr), temperatureQuality = this.temperatureQuality(temperature);
 		var bars = [], i;
 		for (i = 0; i < 14; i++)
 			bars.push(E('span', { 'class':'mt5700m-signal-bar' + (i < active ? ' on' : ''), 'style':'height:%dpx'.format(8 + i * 3) }));
@@ -248,9 +272,9 @@ return view.extend({
 		dom.content(refs.rsrq, isNaN(rsrq) ? '--' : data.rsrq + ' dB');
 		dom.content(refs.sinr, isNaN(sinr) ? '--' : data.sinr + ' dB');
 		dom.content(refs.temperature, isNaN(temperature) ? '--' : data.temperature + '°C');
-		refs.rsrqBox.className = 'mt5700m-mini ' + this.signalQuality('rsrq', rsrq).cls;
-		refs.sinrBox.className = 'mt5700m-mini ' + this.signalQuality('sinr', sinr).cls;
-		refs.temperatureBox.className = 'mt5700m-mini ' + this.temperatureQuality(temperature).cls;
+		updateMetricGauge(refs.rsrqGauge, rsrqQuality, !isNaN(rsrq));
+		updateMetricGauge(refs.sinrGauge, sinrQuality, !isNaN(sinr));
+		updateMetricGauge(refs.temperatureGauge, temperatureQuality, !isNaN(temperature));
 	},
 
 	refreshInterval: function(state) {
@@ -433,15 +457,15 @@ return view.extend({
 	},
 
 	signalCard: function(data, refs, refreshControls) {
+		refs.rsrqGauge = metricGauge('RSRQ', '-25', '-3');
+		refs.sinrGauge = metricGauge('SINR', '-10', '30');
+		refs.temperatureGauge = metricGauge(_('Temperature'), '20', '80');
 		refs.badge = E('span', { 'class':'mt5700m-badge' });
 		refs.rsrp = E('strong');
 		refs.bars = E('div', { 'class':'mt5700m-signal-bars', 'aria-hidden':'true' });
-		refs.rsrq = E('strong');
-		refs.sinr = E('strong');
-		refs.temperature = E('strong');
-		refs.rsrqBox = E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, 'RSRQ'), refs.rsrq ]);
-		refs.sinrBox = E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, 'SINR'), refs.sinr ]);
-		refs.temperatureBox = E('div', { 'class':'mt5700m-mini' }, [ E('span', {}, _('Temperature')), refs.temperature ]);
+		refs.rsrq = refs.rsrqGauge.value;
+		refs.sinr = refs.sinrGauge.value;
+		refs.temperature = refs.temperatureGauge.value;
 		var card = E('section', { 'class':'mt5700m-focus mt-ui-card' }, [
 			E('div', { 'class':'mt5700m-focus-head' }, [
 				E('div', {}, [ E('div', { 'class':'mt5700m-focus-title' }, _('Signal')), E('div', { 'class':'mt5700m-focus-desc' }, _('Current radio quality at a glance')) ]),
@@ -451,9 +475,9 @@ return view.extend({
 			E('div', { 'class':'mt5700m-signal-value' }, [ refs.rsrp, E('span', {}, 'RSRP · dBm') ]),
 			refs.bars,
 			E('div', { 'class':'mt5700m-signal-meta' }, [
-				refs.rsrqBox,
-				refs.sinrBox,
-				refs.temperatureBox
+				refs.rsrqGauge.box,
+				refs.sinrGauge.box,
+				refs.temperatureGauge.box
 			])
 		]);
 		this.updateSignalCard(data, refs);
