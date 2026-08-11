@@ -4,6 +4,7 @@
 'require ui';
 'require dom';
 'require mt5700m.controls as controls';
+'require mt5700m.mcs as mcs';
 
 function sectionValue(raw, label) {
 	var marker = '===== ' + label + ':';
@@ -94,15 +95,8 @@ function parseCellScan(raw) {
 }
 
 function formatMcs(records) {
-	return (records || []).map(function(values) {
-		var codewords;
-		if (values.length < 4 || values[2] !== '1')
-			return '';
-		codewords = values.slice(3).filter(function(value) {
-			return /^\d+$/.test(value) && value !== '255';
-		});
-		return codewords.length ? 'MCS ' + codewords.join(' / ') : '';
-	}).filter(Boolean).join(' · ');
+	var value = (records || []).map(function(record) { return record.join(','); }).join('|');
+	return mcs.parse(value).map(function(record) { return mcs.label(record); }).join(' · ');
 }
 
 function bandChecklist(options, mask, anyMask) {

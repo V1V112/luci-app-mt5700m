@@ -63,10 +63,10 @@ case "${command}" in
 		printf '%s\n' '^MONSSC: NR,1' 'OK'
 		;;
 	'AT^MCS=0')
-		printf '%s\n' '^MCS: 0,1,0,0,255' '^MCS: 0,2,1,15,255' 'OK'
+		printf '%s\n' '^MCS: 0,1,0,15,31' '^MCS: 0,0,1,7,29' 'OK'
 		;;
 	'AT^MCS=1')
-		printf '%s\n' '^MCS: 1,1,1,18,16' '^MCS: 1,2,1,26,24' 'OK'
+		printf '%s\n' '^MCS: 1,1,1,26,30' '^MCS: 1,0,0,18,28' 'OK'
 		;;
 	*)
 		printf '%s\n' 'ERROR'
@@ -106,8 +106,8 @@ printf '%s\n' "${output}" | grep -qx 'carrier_1=NR|n78|640000|3500.00|100.0|6400
 printf '%s\n' "${output}" | grep -qx 'carrier_2=LTE|B3|1300|1840.00|20.0|1650|1950.00|20.0'
 printf '%s\n' "${output}" | grep -qx 'ca_dl_bandwidth=120.0'
 printf '%s\n' "${output}" | grep -qx 'ca_ul_bandwidth=120.0'
-printf '%s\n' "${output}" | grep -qx 'uplink_mcs=0,1,0,0,255|0,2,1,15,255'
-printf '%s\n' "${output}" | grep -qx 'downlink_mcs=1,1,1,18,16|1,2,1,26,24'
+printf '%s\n' "${output}" | grep -qx 'uplink_mcs=0,1,0,15,31|0,0,1,7,29'
+printf '%s\n' "${output}" | grep -qx 'downlink_mcs=1,1,1,26,30|1,0,0,18,28'
 
 [ "$(wc -l < "${COMMAND_LOG}" | tr -d ' ')" = '6' ]
 grep -qx 'AT^HCSQ?' "${COMMAND_LOG}"
