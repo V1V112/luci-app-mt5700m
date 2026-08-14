@@ -240,7 +240,7 @@ return view.extend({
 			E('div', { 'class': 'mt-net-label' }, label),
 			E('span', { 'class': 'mt-net-value' }, value || '--'),
 			value ? E('span', { 'class': 'mt-net-unit' }, unit) : null
-		]);
+		].filter(Boolean));
 	},
 
 	showCellScanResult: function(raw) {
@@ -490,9 +490,9 @@ return view.extend({
 					controls.action(_('Apply DSS settings'), function() {
 						controls.confirmRun('DSS', _('Apply the selected DSS capability restrictions?'), [ 'advanced-set', 'dss', dssRate.value, dssDmrs.value ], true);
 					})
+					])
 				])
-			])
-		]);
+		].filter(Boolean));
 
 		return E('div', { 'class': 'mt-net mt-ui-page' }, [
 			this.styleNode(),
@@ -522,7 +522,7 @@ return view.extend({
 					this.row('TAC / LAC', cell.tac),
 					cell.scs ? this.row(_('SCS type'), cell.scs + ' · ' + ([ '15', '30', '60', '120', '240' ][Number(cell.scs)] || '?') + ' kHz') : null,
 					this.row(_('Registration'), registered ? (registration[1] === '5' ? _('Roaming') : _('Home network')) : _('Not registered'))
-				]),
+				].filter(Boolean)),
 				E('section', { 'class': 'mt-net-panel' }, [
 					E('h3', {}, _('Radio status')),
 					this.row(_('Operator'), operatorName),
@@ -554,7 +554,7 @@ return view.extend({
 			radioControls,
 			E('section', { 'class':'mt-freq-head mt-ui-card' }, [E('h3',{},_('Frequency and cell selection')),E('p',{},_('Advanced controls for limiting LTE or 5G NR bands, frequencies and cells. Leave these unlocked for normal automatic network selection.'))]),
 			E('div', { 'class':'mt-freq-grid' }, [this.lockPanel(_('LTE network'),'lte',lteLock[0]),this.lockPanel(_('5G NR network'),'nr',nrLock[0])])
-		]);
+		].filter(Boolean));
 	},
 
 	handleSave: null,
