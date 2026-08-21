@@ -50,6 +50,7 @@ network.MT5700Mv6.device=@MT5700M
 network.MT5700Mv6.ifname=@MT5700M
 network.MT5700Mv6.auto=0
 mt5700m.connection=connection
+mt5700m.connection.management_mode=managed
 mt5700m.connection.enabled=1
 mt5700m.connection.pdp_type=ipv4v6
 mt5700m.connection.metric=50
@@ -236,12 +237,16 @@ export FAKE_UCI_LOG="${UCI_LOG}"
 export FAKE_COMMAND_LOG="${COMMAND_LOG}"
 export PATH="${BIN}:${PATH}"
 
-run_manager_sync() {
+run_manager() {
 	MT5700M_MANAGER_LOCK="${FIXTURE}/manager.lock" \
 	MT5700M_MANAGER_STATE="${FIXTURE}/state" \
 	MT5700M_MANAGER_LOG="${FIXTURE}/manager.log" \
 	MT5700M_USB_HELPER="${USB_HELPER}" \
-		sh "${MANAGER}" sync
+		sh "${MANAGER}" "$1"
+}
+
+run_manager_sync() {
+	run_manager sync
 }
 
 run_manager_sync
@@ -321,6 +326,7 @@ network.stale_v6.managed_by=mt5700m
 network.stale_v6.proto=dhcpv6
 network.stale_v6.device=@Modem_v4
 mt5700m.connection=connection
+mt5700m.connection.management_mode=managed
 mt5700m.connection.enabled=1
 mt5700m.connection.pdp_type=ipv4v6
 mt5700m.connection.metric=50
@@ -348,6 +354,7 @@ network.loopback=interface
 network.loopback.device=lo
 network.loopback.proto=static
 mt5700m.connection=connection
+mt5700m.connection.management_mode=managed
 mt5700m.connection.enabled=1
 mt5700m.connection.pdp_type=ipv4v6
 mt5700m.connection.metric=50
@@ -401,5 +408,39 @@ uci -q set mt5700m.connection.pdp_type=ipv4v6
 run_manager_sync
 [ "$(uci -q get network.MT5700Mv6.defaultroute)" = '1' ] ||
 	fail 'dual-stack restore lost the app-owned IPv6 default-route policy'
+
+# External mode is the non-invasive default. It discovers status from existing
+# OpenWrt interfaces but never edits UCI, changes link state, or dials the modem.
+cat > "${UCI_DB}" <<'EOF'
+network.Modem_v4=interface
+network.Modem_v4.proto=dhcp
+network.Modem_v4.device=eth1
+network.Modem_v4.metric=25
+network.Modem_v4.peerdns=0
+network.Modem_v6=interface
+network.Modem_v6.proto=dhcpv6
+network.Modem_v6.device=@Modem_v4
+network.Modem_v6.auto=0
+mt5700m.connection=connection
+mt5700m.connection.enabled=1
+mt5700m.connection.pdp_type=ipv4v6
+firewall.wan=zone
+firewall.wan.name=wan
+firewall.wan.network=Modem_v4 Modem_v6
+EOF
+cp "${UCI_DB}" "${FIXTURE}/external-before.db"
+: > "${UCI_LOG}"
+: > "${COMMAND_LOG}"
+rm -f "${FIXTURE}/state/interfaces"
+run_manager_sync
+cmp -s "${FIXTURE}/external-before.db" "${UCI_DB}" ||
+	fail 'external mode changed the OpenWrt network configuration'
+[ ! -s "${UCI_LOG}" ] || fail 'external mode wrote UCI state'
+[ ! -s "${COMMAND_LOG}" ] || fail 'external mode changed an interface or driver'
+if run_manager connect >/dev/null 2>&1; then
+	fail 'external mode accepted a plugin-owned connect action'
+fi
+cmp -s "${FIXTURE}/external-before.db" "${UCI_DB}" ||
+	fail 'a rejected connect action changed the OpenWrt network configuration'
 
 echo 'network policy tests passed'

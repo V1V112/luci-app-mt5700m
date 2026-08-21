@@ -210,6 +210,7 @@ return view.extend({
 		var session = controls.parseSession(sessionResult.stdout || '');
 		var moduleRaw = moduleSettings.stdout || '';
 		var online = dial.connected === true && device.up === true && device.carrier !== false;
+		var externallyManaged = (uci.get('mt5700m', 'connection', 'management_mode') || manager.management_mode || 'external') !== 'managed';
 		var configuredApn = uci.get('mt5700m', 'connection', 'apn') || _('Automatic');
 		var configuredProtocol = { ip:'IPv4', ipv6:'IPv6', ipv4v6:'IPv4 / IPv6' }[uci.get('mt5700m', 'connection', 'pdp_type')] || 'IPv4 / IPv6';
 		var m = new form.Map('mt5700m');
@@ -229,13 +230,22 @@ return view.extend({
 		s = m.section(form.NamedSection, 'connection', 'connection');
 		s.anonymous = true;
 
+		o = s.option(form.ListValue, 'management_mode', _('Connection management'));
+		o.value('external', _('OpenWrt network configuration'));
+		o.value('managed', _('Integrated MT5700M manager'));
+		o.default = 'external';
+		o.rmempty = false;
+		o.description = _('OpenWrt mode preserves existing network interfaces and prevents this plugin from dialing or restarting them.');
+
 		o = s.option(form.Flag, 'enabled', _('Enable automatic dialing'));
 		o.default = '1';
 		o.rmempty = false;
+		o.depends('management_mode', 'managed');
 
 		o = s.option(form.Value, 'apn', _('APN'));
 		o.placeholder = _('Automatic');
 		o.rmempty = true;
+		o.depends('management_mode', 'managed');
 
 		o = s.option(form.ListValue, 'pdp_type', _('IP protocol'));
 		o.value('ip', _('IPv4'));
@@ -243,30 +253,34 @@ return view.extend({
 		o.value('ipv4v6', _('IPv4 / IPv6'));
 		o.default = 'ipv4v6';
 		o.rmempty = false;
+		o.depends('management_mode', 'managed');
 
 		o = s.option(form.ListValue, 'auth', _('Authentication'));
 		o.value('none', _('None'));
 		o.value('pap', 'PAP');
 		o.value('chap', 'CHAP');
 		o.default = 'none';
+		o.depends('management_mode', 'managed');
 
 		o = s.option(form.Value, 'username', _('Username'));
-		o.depends('auth', 'pap');
-		o.depends('auth', 'chap');
+		o.depends({ management_mode:'managed', auth:'pap' });
+		o.depends({ management_mode:'managed', auth:'chap' });
 
 		o = s.option(form.Value, 'password', _('Password'));
 		o.password = true;
-		o.depends('auth', 'pap');
-		o.depends('auth', 'chap');
+		o.depends({ management_mode:'managed', auth:'pap' });
+		o.depends({ management_mode:'managed', auth:'chap' });
 
 		o = s.option(form.Value, 'metric', _('Route metric'));
 		o.datatype = 'uinteger';
 		o.default = '50';
 		o.description = _('A smaller value gives this mobile connection a higher route priority.');
+		o.depends('management_mode', 'managed');
 
 		o = s.option(form.DynamicList, 'dns_list', _('Custom DNS'));
 		o.datatype = 'ipaddr';
 		o.description = _('Leave empty to use DNS supplied by the mobile network.');
+		o.depends('management_mode', 'managed');
 
 		var autoRaw = controls.section(moduleRaw, 'Auto dial');
 		var interfaceRaw = controls.section(moduleRaw, 'Interface mode');
@@ -355,13 +369,13 @@ return view.extend({
 					])
 				]),
 				E('div', { 'class': 'mtconn-facts' }, [
-					self.fact(_('Automatic dialing'), uci.get('mt5700m', 'connection', 'enabled') === '0' ? _('Disabled') : _('Enabled')),
+					self.fact(_('Connection management'), externallyManaged ? _('OpenWrt network configuration') : _('Integrated MT5700M manager')),
 					self.fact(_('Network interface'), manager.network),
 					self.fact('APN', configuredApn),
 					self.fact(_('IP protocol'), configuredProtocol)
 				]),
 				self.sessionPanel(session, sessionResult.stderr),
-				E('div', { 'class': 'mtconn-actions' }, online ? [
+				externallyManaged ? E('div', { 'class':'alert-message notice' }, _('OpenWrt controls this data interface. Configure addressing, routes, DNS and firewall under Network; the plugin will not dial or restart it.')) : E('div', { 'class': 'mtconn-actions' }, online ? [
 					E('button', { 'class': 'btn cbi-button-action', 'click': function() { return self.runAction(callRedial, _('Redial started.'), _('The 5G connection will be interrupted briefly while the modem redials.')); } }, _('Redial')),
 					E('button', { 'class': 'btn cbi-button-negative', 'click': function() { return self.runAction(callHang, _('Connection stopped.'), _('Disconnect the mobile data connection now?')); } }, _('Disconnect'))
 				] : [

@@ -33,6 +33,7 @@ if ! uci -q get mt5700m.connection >/dev/null 2>&1; then
 		break
 	done
 fi
+uci -q set mt5700m.connection.management_mode="$(uci -q get mt5700m.connection.management_mode || echo external)"
 uci -q commit mt5700m
 
 if [ -z "${IPKG_INSTROOT:-}" ]; then

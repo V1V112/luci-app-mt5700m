@@ -63,6 +63,23 @@ config_value() {
 	uci -q get "mt5700m.connection.$1" 2>/dev/null || printf '%s\n' "$2"
 }
 
+connection_management() {
+	case "$(config_value management_mode external)" in
+		managed) printf '%s\n' 'managed' ;;
+		*) printf '%s\n' 'external' ;;
+	esac
+}
+
+connection_is_managed() {
+	[ "$(connection_management)" = 'managed' ]
+}
+
+require_managed_connection() {
+	connection_is_managed && return 0
+	echo 'The data connection is managed by OpenWrt network configuration.' >&2
+	return 1
+}
+
 valid_interface_name() {
 	case "$1" in
 		''|*[!A-Za-z0-9_-]*) return 1 ;;
@@ -444,6 +461,7 @@ interface_up() {
 
 bring_up() {
 	local pdp_type netdev
+	connection_is_managed || return 0
 	netdev="$(mt5700m_netdev || true)"
 	resolve_network_interfaces "${netdev}"
 	pdp_type="$(config_value pdp_type ipv4v6)"
@@ -456,6 +474,7 @@ bring_up() {
 
 bring_down() {
 	local netdev
+	connection_is_managed || return 0
 	netdev="$(mt5700m_netdev || true)"
 	resolve_network_interfaces "${netdev}"
 	ifdown "${INTERFACE6}" >/dev/null 2>&1 || true
@@ -464,6 +483,10 @@ bring_down() {
 
 sync_manager() {
 	local info state netdev pdp_type
+	if ! connection_is_managed; then
+		rm -f "${NDIS_SYNC_MARKER}" "${NDIS_RECOVERY_MARKER}" 2>/dev/null || true
+		return 0
+	fi
 	info="$(mt5700m_usb_info || true)"
 	state="${info%%|*}"
 	if [ "${state}" != 'normal' ]; then
@@ -520,6 +543,7 @@ set_ndis_session() {
 recover_ndis_link() {
 	local netdev carrier reason
 
+	connection_is_managed || return 0
 	[ "$(config_value enabled 1)" = '1' ] || return 0
 	netdev="$(mt5700m_netdev || true)"
 	[ -n "${netdev}" ] || return 1
@@ -561,6 +585,7 @@ recover_ndis_link() {
 }
 
 connect_manager() {
+	require_managed_connection || return 1
 	CONFIG_CHANGED=0
 	set_if_changed mt5700m.connection.enabled 1
 	[ "${CONFIG_CHANGED}" = '0' ] || uci -q commit mt5700m
@@ -580,6 +605,7 @@ connect_manager() {
 }
 
 disconnect_manager() {
+	require_managed_connection || return 1
 	CONFIG_CHANGED=0
 	set_if_changed mt5700m.connection.enabled 0
 	[ "${CONFIG_CHANGED}" = '0' ] || uci -q commit mt5700m
@@ -590,6 +616,7 @@ disconnect_manager() {
 }
 
 redial_manager() {
+	require_managed_connection || return 1
 	bring_down
 	set_ndis_session 0 || true
 	sleep 2
@@ -606,7 +633,7 @@ redial_manager() {
 }
 
 status_json() {
-	local info state rest product slot netdev atport status4 status6 up4 up6 carrier
+	local info state rest product slot netdev atport status4 status6 up4 up6 carrier management
 	. /usr/share/libubox/jshn.sh
 	info="$(mt5700m_usb_info || true)"
 	state="${info%%|*}"
@@ -621,9 +648,12 @@ status_json() {
 	up6="$(bool_value "$(printf '%s' "${status6}" | jsonfilter -e '@.up' 2>/dev/null)")"
 	carrier=0
 	[ -n "${netdev}" ] && [ "$(cat "/sys/class/net/${netdev}/carrier" 2>/dev/null || echo 0)" = '1' ] && carrier=1
+	management="$(connection_management)"
 	json_init
-	json_add_boolean running "$([ "$(config_value enabled 1)" = '1' ] && [ "${state}" = 'normal' ] && echo 1 || echo 0)"
+	json_add_boolean running "$([ "${management}" = 'managed' ] && [ "$(config_value enabled 1)" = '1' ] && [ "${state}" = 'normal' ] && echo 1 || echo 0)"
 	json_add_boolean connected "$({ [ "${up4}" = '1' ] || [ "${up6}" = '1' ]; } && [ "${carrier}" = '1' ] && echo 1 || echo 0)"
+	json_add_boolean connection_managed "$([ "${management}" = 'managed' ] && echo 1 || echo 0)"
+	json_add_string management_mode "${management}"
 	json_add_boolean ipv4_up "${up4}"
 	json_add_boolean ipv6_up "${up6}"
 	json_add_boolean carrier "${carrier}"

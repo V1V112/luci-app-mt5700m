@@ -7,6 +7,7 @@ config mt5700m 'settings'
 	option timeout '8'
 
 config connection 'connection'
+	option management_mode 'external'
 	option enabled '1'
 	option apn ''
 	option pdp_type 'ipv4v6'

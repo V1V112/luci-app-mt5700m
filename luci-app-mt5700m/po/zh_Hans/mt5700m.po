@@ -2596,3 +2596,18 @@ msgstr "查看连接详情"
 
 msgid "View radio and cell details"
 msgstr "查看无线与小区详情"
+
+msgid "Connection management"
+msgstr "连接管理"
+
+msgid "OpenWrt network configuration"
+msgstr "OpenWrt 网络配置"
+
+msgid "Integrated MT5700M manager"
+msgstr "MT5700M 插件集成管理"
+
+msgid "OpenWrt mode preserves existing network interfaces and prevents this plugin from dialing or restarting them."
+msgstr "OpenWrt 模式会保留现有网络接口，并禁止此插件拨号或重启接口。"
+
+msgid "OpenWrt controls this data interface. Configure addressing, routes, DNS and firewall under Network; the plugin will not dial or restart it."
+msgstr "此数据接口由 OpenWrt 控制。请在“网络”中配置地址、路由、DNS 和防火墙；插件不会拨号或重启该接口。"
