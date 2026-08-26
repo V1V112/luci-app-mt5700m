@@ -36,6 +36,7 @@ jobs:
           sh luci-app-mt5700m/tests/test-at-gateway.sh
           sh luci-app-mt5700m/tests/test-radio-refresh.sh
           sh luci-app-mt5700m/tests/test-command-contract.sh
+          sh luci-app-mt5700m/tests/test-read-cache.sh
           sh luci-app-mt5700m/tests/test-hotplug-debounce.sh
           node luci-app-mt5700m/tests/test-mcs-parser.js
       - name: Check executable service files

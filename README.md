@@ -3,15 +3,17 @@
 [![CI](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/ci.yml/badge.svg)](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/ci.yml)
 [![Build Release](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/release.yml/badge.svg)](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/release.yml)
 
-专门面向移远 MT5700M-CN 5G 模组的 OpenWrt LuCI 管理器。它把状态、移动
+专门面向鼎桥（TD Tech）MT5700M-CN 5G 模组的 OpenWrt LuCI 管理器。它把状态、移动
 数据、网络与小区、短信、系统维护和 AT 终端统一到一个应用中，并按照 MT5700M
 手册识别 USB 正常、升级和 Dump 模式。
 
 版本采用标准的 `主版本.次版本.修订版本-r打包修订` 格式。`2.2.0` 按最终用户的
-使用路径重构了信息架构；当前开发版本为 `v2.3.2`，OpenWrt 安装包为
-`2.3.2-r2`。该打包修订默认由 OpenWrt 管理现有数据接口；插件只有在用户明确选择
-集成管理后才会修改网络、防火墙或执行拨号。该版本还修正源码构建时状态读取器缺少执行权限，
-以及条件告警为空时页面出现 `null` 文本的问题；同时保留小区扫描的离网、长时后台扫描与自动恢复注册流程，
+使用路径重构了信息架构；当前开发版本为 `v2.3.3`，OpenWrt 安装包为
+`2.3.3-r1`。该版本默认由 OpenWrt 管理现有数据接口；插件只有在用户明确选择
+集成管理后才会修改网络、防火墙或执行拨号。它为首页的模组状态和数据会话增加安全的短时快照缓存，并在
+守护进程启动后预热并保持更新；页面可以立即读取最近状态，过期快照由后台刷新，所有写操作
+会主动失效缓存。该版本还修正源码构建时状态读取器缺少执行权限，以及条件告警为空时页面出现
+`null` 文本的问题；同时保留小区扫描的离网、长时后台扫描与自动恢复注册流程，
 并将扫描结果整理为可读表格；同时对复合 USB 热插拔事件进行防抖，避免启动时
 重复绑定模组导致 LAN DHCPv4 获取延迟。管理器还会在主机升级或重启而模组未断电
 时按当前 APN/PDP 配置同步一次完整数据会话，恢复 USB NCM 载波、DHCP 与实际
