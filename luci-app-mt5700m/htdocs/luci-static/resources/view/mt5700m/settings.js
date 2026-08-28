@@ -65,7 +65,7 @@ return view.extend({
 					]),
 					formNode
 				]),
-				E('div', { 'class':'mt-diag-back' }, E('a', { 'class':'btn', 'href':L.url('admin/modem/mt5700m/system') }, _('Back to Device and SIM')))
+				E('div', { 'class':'mt-diag-back' }, E('a', { 'class':'btn', 'href':L.url('admin/network/mt5700m/system') }, _('Back to Device and SIM')))
 			]);
 		});
 	}

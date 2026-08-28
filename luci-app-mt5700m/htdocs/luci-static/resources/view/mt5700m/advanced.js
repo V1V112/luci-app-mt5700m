@@ -111,8 +111,8 @@ return view.extend({
 			E('section', { 'class':'mt-hardware-tools mt-ui-card' }, [
 				E('div', {}, [ E('h3', {}, _('Diagnostics and developer tools')), E('p', {}, _('Open low-level communication settings or send AT commands directly to the module.')) ]),
 				E('div', { 'class':'mt-hardware-tool-actions' }, [
-					E('a', { 'class':'btn', 'href':L.url('admin/modem/mt5700m/settings') }, _('Communication diagnostics')),
-					E('a', { 'class':'btn cbi-button-action', 'href':L.url('admin/modem/mt5700m/terminal') }, _('AT Console'))
+					E('a', { 'class':'btn', 'href':L.url('admin/network/mt5700m/settings') }, _('Communication diagnostics')),
+					E('a', { 'class':'btn cbi-button-action', 'href':L.url('admin/network/mt5700m/terminal') }, _('AT Console'))
 				])
 			]),
 			E('details', { 'class':'mt-hardware-details mt-ui-details' }, [

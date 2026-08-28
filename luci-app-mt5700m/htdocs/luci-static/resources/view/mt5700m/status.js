@@ -506,7 +506,7 @@ return view.extend({
 				refs.downlinkCard,
 				refs.uplinkCard
 			]),
-			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/modem/mt5700m/network') }, _('View radio and cell details'))
+			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/network/mt5700m/network') }, _('View radio and cell details'))
 		]);
 		this.updateCarrierCard(info, refs);
 		return card;
@@ -524,7 +524,7 @@ return view.extend({
 				E('div', { 'class':'mt5700m-ip-row' }, [ E('div', { 'class':'mt5700m-ip-head' }, [ E('span', {}, 'IPv6'), E('span', { 'class':'mt5700m-ip-state' + (session.ipv6Connected ? ' on' : '') }, session.ipv6Connected ? _('Connected') : _('Not assigned')) ]), E('div', { 'class':'mt5700m-ip-value' }, session.ipv6Address || '--') ])
 			]),
 			E('div', { 'class':'mt5700m-ip-meta' }, [ E('span', {}, session.capability || '--'), E('span', {}, 'MTU ' + (session.mtu || '--')) ]),
-			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/modem/mt5700m/connection') }, _('View connection details'))
+			E('a', { 'class':'mt5700m-card-link', 'href':L.url('admin/network/mt5700m/connection') }, _('View connection details'))
 		]);
 	},
 
@@ -597,9 +597,9 @@ return view.extend({
 			]),
 			this.trafficPanel(res.traffic || {}, data.network_interface),
 			E('div', { 'class':'mt5700m-shortcuts' }, [
-				this.shortcut(_('Mobile data'), _('APN, dialing, IP details and session counters'), 'admin/modem/mt5700m/connection'),
-				this.shortcut(_('Radio and Cells'), _('Bands, cells, radio policy and diagnostics'), 'admin/modem/mt5700m/network'),
-				this.shortcut(_('Module and SIM'), _('Module identity, SIM information and maintenance'), 'admin/modem/mt5700m/system')
+				this.shortcut(_('Mobile data'), _('APN, dialing, IP details and session counters'), 'admin/network/mt5700m/connection'),
+				this.shortcut(_('Radio and Cells'), _('Bands, cells, radio policy and diagnostics'), 'admin/network/mt5700m/network'),
+				this.shortcut(_('Module and SIM'), _('Module identity, SIM information and maintenance'), 'admin/network/mt5700m/system')
 			])
 		].filter(Boolean));
 	},
