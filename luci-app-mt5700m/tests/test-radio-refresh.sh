@@ -44,10 +44,20 @@ cat > "${BIN}/ip" <<'EOF'
 printf '%s\n' 'default via 10.23.0.1 dev eth1 metric 50'
 EOF
 
-cat > "${BIN}/nc" <<'EOF'
+cat > "${BIN}/mt5700m-transport" <<'EOF'
 #!/bin/sh
 
-command="$(cat | tr -d '\r\n')"
+timeout=''
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		-h) [ "$2" = '192.168.8.1' ] || exit 64; shift 2 ;;
+		-p) [ "$2" = '20249' ] || exit 64; shift 2 ;;
+		-t) timeout="$2"; shift 2 ;;
+		at) shift; [ "$#" -eq 1 ] || exit 64; command="$1"; break ;;
+		*) exit 64 ;;
+	esac
+done
+printf '%s\n' "${timeout}" >> "${FAKE_TIMEOUT_LOG:?}"
 printf '%s\n' "${command}" >> "${FAKE_COMMAND_LOG:?}"
 case "${command}" in
 	'AT^HCSQ?')
@@ -75,21 +85,14 @@ case "${command}" in
 esac
 EOF
 
-cat > "${BIN}/timeout" <<'EOF'
-#!/bin/sh
-
-printf '%s\n' "${1:-}" >> "${FAKE_TIMEOUT_LOG:?}"
-shift
-exec "$@"
-EOF
-
-sed -i 's/\r$//' "${USB_HELPER}" "${BIN}/uci" "${BIN}/ip" "${BIN}/nc" "${BIN}/timeout"
-chmod 0755 "${USB_HELPER}" "${BIN}/uci" "${BIN}/ip" "${BIN}/nc" "${BIN}/timeout"
+sed -i 's/\r$//' "${USB_HELPER}" "${BIN}/uci" "${BIN}/ip" "${BIN}/mt5700m-transport"
+chmod 0755 "${USB_HELPER}" "${BIN}/uci" "${BIN}/ip" "${BIN}/mt5700m-transport"
 
 output="$(
 	FAKE_COMMAND_LOG="${COMMAND_LOG}" \
 	FAKE_TIMEOUT_LOG="${TIMEOUT_LOG}" \
 	MT5700M_USB_HELPER="${USB_HELPER}" \
+	MT5700M_ACTION_LOCK="${FIXTURE}/action.lock" \
 	PATH="${BIN}:${PATH}" \
 		sh "${AT_HELPER}" radio-status
 )"

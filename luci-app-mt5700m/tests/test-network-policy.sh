@@ -12,6 +12,7 @@ UCI_DB="${FIXTURE}/uci.db"
 UCI_LOG="${FIXTURE}/uci.log"
 COMMAND_LOG="${FIXTURE}/commands.log"
 USB_HELPER="${FIXTURE}/usb.sh"
+LOCK_HELPER="${FIXTURE}/lock.sh"
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -206,6 +207,10 @@ mt5700m_netdev() {
 }
 EOF
 
+cat > "${LOCK_HELPER}" <<'EOF'
+mt5700m_action_lock() { :; }
+EOF
+
 cat > "${BIN}/ubus" <<'EOF'
 #!/bin/sh
 printf '%s\n' '{"up":false}'
@@ -223,14 +228,19 @@ printf '%s %s\n' "${0##*/}" "$*" >> "${FAKE_COMMAND_LOG:?}"
 EOF
 done
 
+cat > "${BIN}/flock" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+
 # Keep generated fixture executables usable when the checkout itself has CRLF
 # line endings (for example under Git for Windows).
 sed -i 's/\r$//' "${BIN}/uci" "${USB_HELPER}" "${BIN}/ubus" \
 	"${BIN}/jsonfilter" "${BIN}/ifup" "${BIN}/ifdown" \
-	"${BIN}/logger" "${BIN}/modprobe"
+	"${BIN}/logger" "${BIN}/modprobe" "${BIN}/flock"
 chmod 0755 "${BIN}/uci" "${USB_HELPER}" "${BIN}/ubus" \
 	"${BIN}/jsonfilter" "${BIN}/ifup" "${BIN}/ifdown" \
-	"${BIN}/logger" "${BIN}/modprobe"
+	"${BIN}/logger" "${BIN}/modprobe" "${BIN}/flock"
 
 export FAKE_UCI_DB="${UCI_DB}"
 export FAKE_UCI_LOG="${UCI_LOG}"
@@ -242,6 +252,7 @@ run_manager() {
 	MT5700M_MANAGER_STATE="${FIXTURE}/state" \
 	MT5700M_MANAGER_LOG="${FIXTURE}/manager.log" \
 	MT5700M_USB_HELPER="${USB_HELPER}" \
+	MT5700M_LOCK_HELPER="${LOCK_HELPER}" \
 		sh "${MANAGER}" "$1"
 }
 
@@ -442,5 +453,9 @@ if run_manager connect >/dev/null 2>&1; then
 fi
 cmp -s "${FIXTURE}/external-before.db" "${UCI_DB}" ||
 	fail 'a rejected connect action changed the OpenWrt network configuration'
+run_manager check-health
+[ "$(cat "${FIXTURE}/state/health-state")" = 'external' ] ||
+	fail 'external mode did not disable managed cellular health recovery'
+[ ! -s "${COMMAND_LOG}" ] || fail 'external health check changed an interface or driver'
 
 echo 'network policy tests passed'

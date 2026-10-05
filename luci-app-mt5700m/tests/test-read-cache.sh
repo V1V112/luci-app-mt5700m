@@ -23,6 +23,7 @@ EOF
 chmod 0755 "${TMP}/fake-at"
 
 export MT5700M_AT_HELPER="${TMP}/fake-at"
+export MT5700M_ACTION_LOCK="${TMP}/action.lock"
 export MT5700M_READ_CACHE_DIR="${TMP}/cache"
 export MT5700M_READ_CACHE_TTL=1
 export MT5700M_READ_CACHE_MAX_STALE=30
