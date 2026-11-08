@@ -89,11 +89,15 @@ function snapshot(name, root) {
  document.hidden=true;await advance(15000);assert.equal(samples,2);document.hidden=false;await advance(5000);assert(samples>=3);
  root.remove();let prior=calls.length;await advance(10000);assert.equal(calls.length,prior);
  root=mount(new Element('div'));responses.signal={code:0,stdout:'sysmode=NR\nsampled_at=1\n'};ctx.ux.signal(root,()=>samples++,()=>errors++);await advance(0);assert.equal(errors,1);root.remove();
- // Overview renders fresh carrier/traffic separately, one countdown, and preserves addresses on RPC failure.
+ // The shared 5-second refresh updates signal and cached carrier metrics independently of the full status read.
  responses.signal=()=>({code:0,stdout:`sysmode=NR\nrsrp=-82\nrsrq=-7\nsinr=18\nsampled_at=${now/1000-7}\n`});
  let usbSpeed='480';
  const radioCarriers='carrier_count=2\ncarrier_1=NR|n78|1|x|100|x|x|100\ncarrier_2=NR|n78|2|x|100|x|x|100\nca_active=1\n';
- responses.status=()=>({code:0,stdout:`connected=1\nsysmode=NR\noperator=Test\nusb_speed_mbps=${usbSpeed}\nsnapshot_at=${now/1000-12}\n`+radioCarriers+'downlink_mcs=0,1,1,19,0,0,0\nuplink_mcs=0,1,0,15,31\n'});
+ const initialCarrierTime=now/1000-12;
+ let radioCache=`snapshot_at=${initialCarrierTime}\n`+radioCarriers+'downlink_mcs=0,1,1,19,0,0,0\nuplink_mcs=0,1,0,15,31\n';
+ responses['radio-status']=()=>({code:0,stdout:radioCache});
+ responses.status=()=>({code:0,stdout:`connected=1\nsysmode=NR\noperator=Test\ntemperature=38\nusb_speed_mbps=${usbSpeed}\n`+radioCache});
+ calls=[];
  const overview=load('view/mt5700m/status');root=mount(overview.render());await advance(0);await advance(1000);
  assert.equal(root.querySelectorAll('[data-signal-countdown]').length,1);
  const signalCard=root.querySelector('[data-mt-signal]');
@@ -102,38 +106,102 @@ function snapshot(name, root) {
  const signalActions=root.querySelector('[data-signal-countdown]').parentNode;
  assert.equal(signalActions.className,'mt-signal-actions');
  assert(signalActions.children.some(n=>n.className.includes('mt5700m-badge')));
-assert(root.textContent.includes('n78 + n78'));assert(root.textContent.includes('10.0.0.2'));
+ assert(root.textContent.includes('n78 + n78'));assert(root.textContent.includes('10.0.0.2'));
  assert(root.textContent.includes('2CA'));
  assert(root.querySelector('[data-mt-usb-link]').textContent.includes('480 Mbps'));
- // The removed radio controls cannot trigger AT reads; normal cached polling preserves sample ages and MCS.
+ // Existing automatic polling needs no custom controls and preserves backend sample ages.
  assert(!root.querySelector('.mt5700m-radio-refresh'));
  assert(!root.querySelector('.mt5700m-auto-toggle'));
  assert(!root.querySelector('.mt5700m-refresh-interval'));
  assert(!root.querySelectorAll('button').some(n=>/Refresh signal and carriers|Auto refresh/.test(n.textContent)));
  assert(!root.querySelectorAll('input').some(n=>n.attrs.type==='number'||n.attrs['aria-label']==='Refresh interval in seconds'));
  const mcsValues=()=>root.querySelectorAll('.mcs-value').map(n=>n.textContent);
+ const bandwidths=()=>root.querySelector('[data-mt-carrier]').querySelectorAll('.bandwidth').map(n=>n.textContent);
+ const temperatureValue=()=>root.querySelectorAll('.mt5700m-mini').find(n=>n.querySelector('span')?.textContent==='Temperature').querySelector('strong').textContent;
+ const radioCalls=()=>calls.filter(c=>c[0]==='radio-status').length;
+ const statusCalls=()=>calls.filter(c=>c[0]==='status').length;
+ assert.equal(temperatureValue(),'38 ℃','the temperature value must be separated from its unit');
  assert(root.querySelector('.mt5700m-signal-value').textContent.includes('-82'));
  assert.equal(root.querySelector('[data-signal-time]').textContent,'Updated 8 秒前','cached signal reads must show the collector sample age');
  assert.equal(root.querySelector('[data-overview-age]').textContent,'Updated 13 秒前','carrier age must use the backend snapshot time');
  assert.deepStrictEqual(mcsValues(),['19','15']);
+ assert.equal(radioCalls(),1);
+ assert.equal(statusCalls(),1);
  await advance(1000);
  assert.equal(root.querySelector('[data-signal-time]').textContent,'Updated 9 秒前');
  assert.equal(root.querySelector('[data-overview-age]').textContent,'Updated 14 秒前','age ticks must keep the backend snapshot time');
+ const refreshedCarrierTime=now/1000;
+ radioCache=`snapshot_at=${refreshedCarrierTime}\ncarrier_count=3\ncarrier_1=NR|n78|1|3500|100|1|3500|80\ncarrier_2=NR|n41|2|2600|80|2|2600|40\ncarrier_3=NR|n28|3|700|40|3|700|20\nca_active=1\nca_dl_bandwidth=220\nca_ul_bandwidth=140\ndownlink_mcs=0,1,1,21,0,0,0\nuplink_mcs=0,1,0,17,31\nrsrp=-120\nsampled_at=${initialCarrierTime}\n`;
+ await advance(2999);assert.equal(radioCalls(),1,'carrier reads must wait for the five-second interval');
+ await advance(1);
+ assert.equal(radioCalls(),2);
+ assert.equal(statusCalls(),1,'a carrier refresh must not issue a full status query');
+ assert(root.querySelector('[data-mt-carrier]').textContent.includes('3CA'));
+ assert.equal(root.querySelector('.mt5700m-band').textContent,'n78 + n41 + n28');
+ assert.deepStrictEqual(bandwidths(),['N78 · 100 MHz','N41 · 80 MHz','N28 · 40 MHz','N78 · 80 MHz','N41 · 40 MHz','N28 · 20 MHz']);
+ assert(root.querySelector('[data-mt-carrier]').textContent.includes('Downlink bandwidth · 220 MHz'));
+ assert.deepStrictEqual(mcsValues(),['21','17']);
+ assert.equal(root.querySelector('[data-overview-age]').textContent,'Updated 3 秒前');
+ assert(root.querySelector('.mt5700m-signal-value').textContent.includes('-82'),'radio cache fields cannot roll back a fresher signal sample');
  const previousSignal=root.querySelector('.mt5700m-signal-value').textContent;
  responses.signal={code:75,stderr:'signal cache busy'};
- await advance(4000);
+ responses['radio-status']={code:75,stderr:'carrier cache busy'};
+ await advance(6000);
  assert.equal(root.querySelector('.mt5700m-signal-value').textContent,previousSignal);
  assert.equal(root.querySelector('[data-signal-time]').textContent,'更新暂缓 · 13 秒前');
- assert.deepStrictEqual(mcsValues(),['19','15']);
+ assert.deepStrictEqual(mcsValues(),['21','17']);
+ assert(root.querySelector('[data-overview-age]').textContent.endsWith('9 秒前'),'failed carrier reads must retain the previous sample time');
  responses.signal=()=>({code:0,stdout:`sysmode=NR\nrsrp=-82\nrsrq=-7\nsinr=18\nsampled_at=${now/1000-7}\n`});
+ responses['radio-status']=()=>({code:0,stdout:radioCache});
  usbSpeed='5000';
  rpcFail=true;await advance(4000);assert(root.textContent.includes('10.0.0.2'));assert(root.textContent.includes('状态待确认'));rpcFail=false;
- responses.status=()=>({code:0,stdout:`connected=1\nsysmode=NR\noperator=Test\nusb_speed_mbps=${usbSpeed}\nsnapshot_at=${now/1000-4}\n`+radioCarriers});
- const initial=calls.filter(c=>c[0]==='status').length;await advance(51000);assert(calls.filter(c=>c[0]==='status').length>initial);
- assert.deepStrictEqual(mcsValues(),['19','15'],'automatic carrier snapshots without MCS must preserve prior MCS');
- assert.equal(root.querySelector('[data-overview-age]').textContent,'Updated 5 秒前');
- assert(!calls.some(c=>c[0]==='radio-status'),'overview must use cached signal/status reads only');
- assert.equal(root.querySelector('[data-mt-usb-link]').textContent,'5 Gbps');snapshot('status',root);root.remove();
+ // A slow/full response may arrive after fresher carrier and signal data.
+ const signalTime=root.querySelector('[data-signal-time]').textContent;
+ responses.status=()=>({code:0,stdout:`connected=1\nsysmode=NR\noperator=Test\ntemperature=38\nusb_speed_mbps=${usbSpeed}\nsnapshot_at=${initialCarrierTime}\nsampled_at=${initialCarrierTime}\nrsrp=-125\n`+radioCarriers+'downlink_mcs=0,1,1,2,0,0,0\nuplink_mcs=0,1,0,3,31\n'});
+ await overview._refreshSnapshot();
+ assert.equal(root.querySelector('[data-mt-usb-link]').textContent,'5 Gbps');
+ assert(root.querySelector('[data-mt-carrier]').textContent.includes('3CA'),'older full snapshots cannot replace a newer carrier group');
+ assert.deepStrictEqual(mcsValues(),['21','17']);
+ assert.equal(root.querySelector('.mt5700m-signal-value').textContent,previousSignal);
+ assert.equal(root.querySelector('[data-signal-time]').textContent,signalTime,'older full snapshots cannot replace a newer signal sample time');
+ // Unchanged carriers keep their last MCS when a refresh omits or leaves those optional fields empty.
+ radioCache=radioCache.replace(/^snapshot_at=.*$/m,'snapshot_at='+now/1000).replace(/^downlink_mcs=.*\n/m,'').replace(/^uplink_mcs=.*$/m,'uplink_mcs=');
+ await advance(5000);
+ assert.deepStrictEqual(mcsValues(),['21','17']);
+ // Shrinking the carrier group must remove old bands/rows and show MCS from the new composition.
+ const reducedCarrierTime=now/1000;
+ radioCache=`snapshot_at=${reducedCarrierTime}\ncarrier_count=1\ncarrier_1=NR|n41|4|2600|60|4|2600|20\nca_active=0\ndc_active=0\nca_dl_bandwidth=60\nca_ul_bandwidth=20\ndownlink_mcs=0,1,1,9,0,0,0\nuplink_mcs=0,1,0,10,31\n`;
+ await advance(5000);
+ assert(root.querySelector('[data-mt-carrier]').textContent.includes('Single carrier'));
+ assert.equal(root.querySelector('.mt5700m-band').textContent,'n41');
+ assert.deepStrictEqual(bandwidths(),['N41 · 60 MHz','N41 · 20 MHz']);
+ assert.deepStrictEqual(mcsValues(),['9','10']);
+ assert(!root.querySelector('.mt-carrier-detail').textContent.includes('载波 2'),'old records must disappear when the carrier count decreases');
+ radioCache=`snapshot_at=${reducedCarrierTime-1}\n`+radioCarriers;
+ await advance(5000);
+ assert.equal(root.querySelector('.mt5700m-band').textContent,'n41','out-of-order carrier replies must not restore old bands');
+ assert.equal(root.querySelector('[data-overview-age]').textContent,'Updated 10 秒前');
+ for(const response of [
+  {code:0,stdout:`snapshot_at=${now/1000}\ndownlink_mcs=\nuplink_mcs=\n`},
+  {code:0,stdout:''},
+  {code:75,stderr:'carrier cache unavailable'}]){
+  responses['radio-status']=response;
+  await advance(5000);
+  assert.equal(root.querySelector('.mt5700m-band').textContent,'n41','incomplete or failed reads must retain the last carrier state');
+  assert.deepStrictEqual(mcsValues(),['9','10']);
+  assert(root.querySelector('[data-overview-age]').textContent.endsWith((now/1000-reducedCarrierTime)+' 秒前'),'incomplete or failed reads must not invent a fresh sample time');
+ }
+ const initial=statusCalls();await advance(20000);assert(statusCalls()>initial,'full metadata keeps its existing sixty-second refresh');
+ assert.equal(root.querySelector('.mt5700m-band').textContent,'n41');
+ assert.deepStrictEqual(mcsValues(),['9','10']);
+ assert.equal(temperatureValue(),'38 ℃');
+ document.hidden=true;const hiddenCalls=calls.length;await advance(15000);
+ assert.equal(calls.length,hiddenCalls,'hidden overview pages must pause signal and carrier reads');
+ document.hidden=false;const beforeResume=radioCalls();await advance(5000);
+ assert(radioCalls()>beforeResume,'carrier refresh resumes when the overview becomes visible');
+ snapshot('status',root);root.remove();
+ prior=calls.length;await advance(10000);assert.equal(calls.length,prior,'detached overview pages must stop automatic reads');
+ responses['radio-status']={code:0,stdout:''};
 
  // External connection management has no diagnostic node, both initially and during local polling.
  managerStatus={...healthyManager,connection_managed:false,internet_verified:false,health_status:'modem-unconfirmed'};

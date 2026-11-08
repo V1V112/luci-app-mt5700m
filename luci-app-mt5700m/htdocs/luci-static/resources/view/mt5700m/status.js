@@ -109,6 +109,59 @@ function signalTimeText(data, failed) {
         (ux.age(stamp) > 15 ? ' · 数值可能过期' : '') : '等待后台信号采样…';
 }
 
+var signalFields = ['sysmode', 'rsrp', 'rsrq', 'sinr', 'rssi', 'rscp', 'ecio', 'sampled_at'];
+var carrierFields = ['snapshot_at', 'carrier_count', 'ca_active', 'dc_active', 'nr_carrier_count',
+    'lte_carrier_count', 'lte_secondary_count', 'secondary_connection_count', 'ca_mode',
+    'ca_dl_bandwidth', 'ca_ul_bandwidth', 'uplink_mcs', 'downlink_mcs'];
+
+function isCarrierField(key) {
+    return carrierFields.indexOf(key) !== -1 || /^carrier_[0-9]+(?:_ul_valid)?$/.test(key);
+}
+
+function validCarrierSnapshot(data) {
+    var count = Number(data.carrier_count), age = ux.age(data.snapshot_at);
+    if (!Number.isInteger(count) || count < 1 || age === null || age > 60) return false;
+    var records = Object.keys(data).filter(function(key) { return /^carrier_[1-9][0-9]*$/.test(key); });
+    if (records.length !== count) return false;
+    for (var i = 1; i <= count; i++) {
+        var fields = String(data['carrier_' + i] || '').split('|');
+        if (fields.length < 8 || !fields[0] || !fields[1]) return false;
+    }
+    return true;
+}
+
+function mergeCarrierSnapshot(target, data) {
+    if (!validCarrierSnapshot(data) || Number(data.snapshot_at) < (Number(target.snapshot_at) || 0)) return false;
+    var changed = data.carrier_count !== target.carrier_count;
+    for (var i = 1; i <= Number(data.carrier_count); i++) {
+        var identity = function(value) { return String(value || '').split('|').slice(0, 4).join('|'); };
+        if (identity(data['carrier_' + i]) !== identity(target['carrier_' + i])) changed = true;
+    }
+    Object.keys(target).forEach(function(key) {
+        if (isCarrierField(key) && key !== 'uplink_mcs' && key !== 'downlink_mcs') delete target[key];
+    });
+    carrierFields.forEach(function(key) {
+        if (key === 'uplink_mcs' || key === 'downlink_mcs') {
+            if (mcs.parse(data[key]).length) target[key] = data[key];
+            else if (changed) delete target[key];
+        } else if (Object.prototype.hasOwnProperty.call(data, key)) target[key] = data[key];
+    });
+    Object.keys(data).forEach(function(key) { if (/^carrier_[0-9]+(?:_ul_valid)?$/.test(key)) target[key] = data[key]; });
+    return true;
+}
+
+function mergeSignalSnapshot(target, data) {
+    var age = ux.age(data.sampled_at);
+    if (!data.sysmode || age === null || age > 30 || Number(data.sampled_at) < (Number(target.sampled_at) || 0)) return false;
+    signalFields.forEach(function(key) { delete target[key]; });
+    signalFields.forEach(function(key) { if (Object.prototype.hasOwnProperty.call(data, key)) target[key] = data[key]; });
+    return true;
+}
+
+function carrierTimeText(stamp, failed) {
+    return stamp ? (failed ? '更新暂缓 · ' + ux.ageText(stamp) : _('Updated %s').format(ux.ageText(stamp))) : _('Waiting for carrier snapshot…');
+}
+
 function carrierMcs(records, position) {
 	return records[position] || null;
 }
@@ -239,9 +292,8 @@ return view.extend({
             var card=root.querySelector('[data-mt-signal]'); if (!card) return;
             var state = self.overviewState;
             if (!state) return;
+            if (!mergeSignalSnapshot(state.data, data)) return;
             state.signalFailed=false;
-            ['sysmode','rsrp','rsrq','sinr','rssi','rscp','ecio'].forEach(function(key) { delete state.data[key]; });
-            Object.keys(data).forEach(function(key) { state.data[key] = data[key]; });
             self.updateSignalCard(state.data, state.signalRefs);
         }, function() {
             if (self.overviewState) self.overviewState.signalFailed=true;
@@ -250,6 +302,22 @@ return view.extend({
             var state=self.overviewState;
             if (badge) badge.textContent=remaining===null?'已暂停':remaining===0?'刷新中':remaining+' 秒后刷新';
             if(label) label.textContent=signalTimeText(state && state.data,state && state.signalFailed);
+        });
+    },
+    startCarrierUpdates: function(root) {
+        var self=this;
+        ux.watch(root,5,function() {
+            return ux.read(['radio-status']).then(function(result) {
+                if (!root.isConnected || document.hidden) return;
+                var state=self.overviewState, data=ux.values(result.stdout);
+                if (!state) return;
+                if (!validCarrierSnapshot(data)) throw Error('Incomplete carrier snapshot');
+                if (!mergeCarrierSnapshot(state.data,data)) return;
+                state.carrierFailed=false;
+                self.updateCarrierCard(self.carrierInfo(state.data),state.carrierRefs);
+            }).catch(function() {
+                if (root.isConnected && self.overviewState) self.overviewState.carrierFailed=true;
+            });
         });
     },
     startLocalUpdates: function(root) {
@@ -301,7 +369,7 @@ return view.extend({
                 if(!ready){
                     self.manager=data.manager;lastSnapshot={time:Date.now(),data:data};
                     content.replaceChildren(self.renderStatus(data));ready=true;
-                    self.startSignalUpdates(root);self.startLocalUpdates(root);
+                    self.startSignalUpdates(root);self.startCarrierUpdates(root);self.startLocalUpdates(root);
                     ux.watch(root,15,function(){return callTraffic().then(function(report){
                         if(!report||!Array.isArray(report.interfaces))throw Error('No traffic data');
                         var panel=root.querySelector('.mt5700m-traffic');if(panel)panel.replaceWith(self.trafficPanel(report,self.manager.network||''));
@@ -309,8 +377,11 @@ return view.extend({
                 }else{
                     var state=self.overviewState;
                     if (state) {
-                        Object.keys(state.data).forEach(function(key) { if (/^carrier_[0-9]+(?:_ul_valid)?$/.test(key)) delete state.data[key]; });
-                        Object.keys(parsed).forEach(function(key) { state.data[key]=parsed[key]; });
+                        if (mergeCarrierSnapshot(state.data,parsed)) state.carrierFailed=false;
+                        if (mergeSignalSnapshot(state.data,parsed)) state.signalFailed=false;
+                        Object.keys(parsed).forEach(function(key) {
+                            if (!isCarrierField(key) && signalFields.indexOf(key) === -1) state.data[key]=parsed[key];
+                        });
                         self.updateCarrierCard(self.carrierInfo(state.data),state.carrierRefs);
                         self.updateSignalCard(state.data,state.signalRefs);
                     }
@@ -326,7 +397,7 @@ return view.extend({
             }).then(function(){busy=false;});
         }
         this._overviewRoot=root;this._refreshSnapshot=snapshot;
-        ux.watch(root,60,snapshot,function(){var label=root.querySelector('[data-overview-age]'),state=self.overviewState;var current=state?Number(state.data.snapshot_at)||0:stamp;if(label)label.textContent=current?_('Updated %s').format(ux.ageText(current)):_('Waiting for carrier snapshot…');});
+        ux.watch(root,60,snapshot,function(){var label=root.querySelector('[data-overview-age]'),state=self.overviewState;var current=state?Number(state.data.snapshot_at)||0:stamp;if(label)label.textContent=carrierTimeText(current,state && state.carrierFailed);});
         return root;
     },
     parseStatus: function(res) {
@@ -438,7 +509,7 @@ return view.extend({
 		dom.content(refs.bars, bars);
 		dom.content(refs.rsrq, isNaN(rsrq) ? '--' : data.rsrq + ' dB');
 		dom.content(refs.sinr, isNaN(sinr) ? '--' : data.sinr + ' dB');
-		dom.content(refs.temperature, isNaN(temperature) ? '--' : data.temperature + '°C');
+		dom.content(refs.temperature, isNaN(temperature) ? '--' : data.temperature + ' ℃');
 		if (refs.time) dom.content(refs.time, signalTimeText(data, this.overviewState && this.overviewState.signalFailed));
 		if (refs.radio) { refs.radio.title = data.sysmode || '--'; dom.content(refs.radio, signalRadioLabel(data.sysmode || '--')); }
 		updateMetricGauge(refs.rsrqGauge, rsrqQuality, !isNaN(rsrq));
@@ -497,7 +568,7 @@ return view.extend({
         dom.content(refs.headline, headline);
         dom.content(refs.mode, info.dual || info.active ? '' : info.mode || _('Mobile network'));
         refs.mode.hidden = !!(info.dual || info.active);
-        dom.content(refs.age, info.snapshotAt ? _('Updated %s').format(ux.ageText(info.snapshotAt)) : _('Waiting for carrier snapshot…'));
+        dom.content(refs.age, carrierTimeText(info.snapshotAt, this.overviewState && this.overviewState.carrierFailed));
         dom.content(refs.bands, info.carriers.length
             ? E('span', {'class':'mt5700m-band'}, info.carriers.map(function(c) { return c.band || '--'; }).join(' + '))
             : E('span', {'class':'mt5700m-focus-desc'}, _('Current carrier information is unavailable.')));
@@ -661,7 +732,7 @@ return view.extend({
         var reachable = data.reachable === '1',
             connected = data.connected === '1',
             carrierInfo = this.carrierInfo(data);
-        var state = {data:data, signalRefs:{}, carrierRefs:{}, signalFailed:false};
+        var state = {data:data, signalRefs:{}, carrierRefs:{}, signalFailed:false, carrierFailed:false};
         this.overviewState = state;
         var operator = data.operator || '';
         if (!/[A-Za-z0-9\u4e00-\u9fff]/.test(operator)) operator = '';

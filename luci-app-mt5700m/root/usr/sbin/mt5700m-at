@@ -1259,9 +1259,10 @@ case "${action}" in
 		;;
 	*)
 		# A write may change values shown by the overview or session cards.
-		# Remove only the two known snapshots; the next read will repopulate them.
+		# The next read will repopulate the affected overview/session snapshots.
 		rm -f "${READ_CACHE_DIR}/status.cache" "${READ_CACHE_DIR}/status.time" \
-			"${READ_CACHE_DIR}/session.cache" "${READ_CACHE_DIR}/session.time"
+			"${READ_CACHE_DIR}/session.cache" "${READ_CACHE_DIR}/session.time" \
+			"${READ_CACHE_DIR}/radio.cache" "${READ_CACHE_DIR}/radio.time"
 		;;
 esac
 
