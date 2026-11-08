@@ -37,17 +37,18 @@ assert_equal() {
 cat > "$fake_bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-printf 'curl\t%s\t%s\n' "$FAKE_EXPECT_VERSION" "$FAKE_EXPECT_TARGET" >> "$FAKE_TRACE"
+arguments="$*"
 url=''
 output=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -o) output="$2"; shift 2 ;;
-    --retry) shift 2 ;;
+    --retry|--retry-delay|--connect-timeout|--max-time|--speed-time|--speed-limit|--continue-at) shift 2 ;;
     -*) shift ;;
     *) url="$1"; shift ;;
   esac
 done
+printf 'curl\t%s\t%s\t%s\t%s\n' "$FAKE_EXPECT_VERSION" "$FAKE_EXPECT_TARGET" "$url" "$arguments" >> "$FAKE_TRACE"
 base_url="https://downloads.openwrt.org/releases/${FAKE_EXPECT_VERSION}/targets/${FAKE_EXPECT_TARGET}"
 archive="openwrt-sdk-${FAKE_EXPECT_VERSION}-${FAKE_EXPECT_TARGET//\//-}_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
 payload="fixture SDK ${FAKE_EXPECT_VERSION} ${FAKE_EXPECT_TARGET}"
@@ -60,7 +61,19 @@ case "$url" in
     } > "${output:-sha256sums}"
     ;;
   "$base_url/$archive")
-    [ "$output" = "$archive" ]
+    [[ "$output" = */"$archive.part" ]]
+    [[ "$arguments" = *'--retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20'* ]]
+    [[ "$arguments" = *'--speed-time 60 --speed-limit 1024 --continue-at -'* ]]
+    if [ -f "$output" ]; then
+      prefix="$(cat "$output")"
+      [[ "$payload" = "$prefix"* ]] || { printf 'Invalid prefix reached curl resume\n' >&2; exit 1; }
+      printf 'curl-resume\t%s\t%s\n' "$FAKE_EXPECT_VERSION" "$FAKE_EXPECT_TARGET" >> "$FAKE_TRACE"
+    fi
+    if [ "${FAKE_CURL_FAIL_ONCE:-0}" = 1 ] && [ ! -f "$FAKE_CURL_FAIL_MARK" ]; then
+      printf 'fixture SDK' > "$output"
+      touch "$FAKE_CURL_FAIL_MARK"
+      exit 18
+    fi
     if [ "${FAKE_CORRUPT_ARCHIVE:-0}" = 1 ]; then payload='corrupt SDK'; fi
     printf '%s\n' "$payload" > "$output"
     ;;
@@ -68,12 +81,45 @@ case "$url" in
 esac
 EOF
 
+cat > "$fake_bin/aria2c" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+arguments="$*"
+directory=''
+output=''
+url=''
+for argument in "$@"; do
+  case "$argument" in
+    --dir=*) directory="${argument#*=}" ;;
+    --out=*) output="${argument#*=}" ;;
+    --*) ;;
+    *) url="$argument" ;;
+  esac
+done
+archive="openwrt-sdk-${FAKE_EXPECT_VERSION}-${FAKE_EXPECT_TARGET//\//-}_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
+[ "$url" = "https://downloads.openwrt.org/releases/${FAKE_EXPECT_VERSION}/targets/${FAKE_EXPECT_TARGET}/${archive}" ]
+[ "$output" = "$archive.part" ]
+[[ "$directory" = */"${FAKE_EXPECT_VERSION}-${FAKE_EXPECT_TARGET//\//-}" ]]
+[[ "$arguments" = *'--continue=true --allow-overwrite=true --auto-file-renaming=false'* ]]
+[[ "$arguments" = *'--max-connection-per-server=4 --split=4 --min-split-size=20M --file-allocation=none'* ]]
+[[ "$arguments" = *'--max-tries=5 --retry-wait=2 --connect-timeout=20 --timeout=60 --summary-interval=10'* ]]
+printf 'aria2\t%s\t%s\t%s\n' "$FAKE_EXPECT_VERSION" "$FAKE_EXPECT_TARGET" "$arguments" >> "$FAKE_TRACE"
+if [ "${FAKE_ARIA2_FAIL:-0}" = 1 ]; then
+  printf 'noncontiguous chunks cannot be resumed by curl\n' > "$directory/$output"
+  printf 'aria2 control data\n' > "$directory/$output.aria2"
+  exit 1
+fi
+payload="fixture SDK ${FAKE_EXPECT_VERSION} ${FAKE_EXPECT_TARGET}"
+if [ "${FAKE_CORRUPT_ARCHIVE:-0}" = 1 ]; then payload='corrupt SDK'; fi
+printf '%s\n' "$payload" > "$directory/$output"
+EOF
+
 cat > "$fake_bin/tar" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 archive="${!#}"
 [ "$(cat "$archive")" = "fixture SDK ${FAKE_EXPECT_VERSION} ${FAKE_EXPECT_TARGET}" ]
-sdk_dir="${archive%.tar.zst}"
+sdk_dir="$(basename "${archive%.tar.zst}")"
 printf 'extract\t%s\t%s\t%s\n' "$FAKE_EXPECT_VERSION" "$FAKE_EXPECT_TARGET" "$PWD" >> "$FAKE_TRACE"
 # A leftover extraction must never be selected by find | head.
 mkdir -p openwrt-sdk-000000-stale/scripts
@@ -229,6 +275,10 @@ for sdk_version in 24.10.8 25.12.6; do
     grep -qx "PACKAGE_ARCH=$package_arch" "$output_dir/BUILD-INFO.txt" || fail 'architecture metadata missing'
     archive="openwrt-sdk-${sdk_version}-${sdk_target//\//-}_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
     checksum="$(printf 'fixture SDK %s %s\n' "$sdk_version" "$sdk_target" | sha256sum | cut -d ' ' -f 1)"
+    cache_dir="$RUNNER_TEMP/mt5700m-sdk-downloads/${sdk_version}-${sdk_target//\//-}"
+    [ -f "$cache_dir/$archive" ] || fail 'verified SDK archive was not cached'
+    [ ! -e "$cache_dir/$archive.part" ] || fail 'completed SDK retained partial download'
+    assert_equal "$(find "$cache_dir" -type f | wc -l | tr -d '[:space:]')" 1 'only verified compressed SDK is cached'
     grep -qx "$checksum  $archive" "$output_dir/BUILD-INFO.txt" || fail 'SDK checksum metadata missing'
     grep -qx "SDK_URL=https://downloads.openwrt.org/releases/${sdk_version}/targets/${sdk_target}/${archive}" "$output_dir/BUILD-INFO.txt" || fail 'SDK source URL metadata missing'
     (cd "$output_dir" && sha256sum -c SHA256SUMS) > /dev/null || fail 'release checksums invalid'
@@ -238,13 +288,43 @@ for sdk_version in 24.10.8 25.12.6; do
   done
 done
 assert_equal "$(awk -F '\t' '$1 == "extract" { print $4 }' "$trace" | sort -u | wc -l | tr -d '[:space:]')" 4 'SDK version and target work directories isolated'
+assert_equal "$(grep -c $'^aria2\t' "$trace")" 4 'four independent SDK archive downloads'
+manifest_count="$(awk -F '\t' '$1 == "curl" && $4 ~ /\/sha256sums$/ { count++ } END { print count + 0 }' "$trace")"
 
 # Existing callers keep the same default SDK version and target.
+# A valid cached archive avoids another SDK download but rechecks official sums.
 unset SDK_VERSION SDK_TARGET
 export FAKE_EXPECT_VERSION=25.12.6 FAKE_EXPECT_TARGET=mediatek/filogic
 if ! bash "$test_repo/scripts/build-release.sh" > "$run_log" 2>&1; then fail 'default release build failed'; fi
 grep -qx 'SDK=25.12.6' "$output_dir/BUILD-INFO.txt" || fail 'default SDK changed'
 grep -qx 'TARGET=mediatek/filogic' "$output_dir/BUILD-INFO.txt" || fail 'default target changed'
+grep -q 'Reusing cached SDK (official SHA256 verified)' "$run_log" || fail 'verified SDK cache hit was not logged'
+assert_equal "$(grep -c $'^aria2\t' "$trace")" 4 'cache hit did not redownload SDK with aria2'
+assert_equal "$(awk -F '\t' '$1 == "curl" && $4 ~ /\.tar\.zst$/ { count++ } END { print count + 0 }' "$trace")" 0 'cache hit did not redownload SDK with curl'
+assert_equal "$(awk -F '\t' '$1 == "curl" && $4 ~ /\/sha256sums$/ { count++ } END { print count + 0 }' "$trace")" "$((manifest_count + 1))" 'cache hit fetched current official checksums'
+
+# A damaged cached archive is replaced. Noncontiguous aria2 data must be removed
+# before curl fallback, and failed curl resume must retry from a clean file.
+archive='openwrt-sdk-25.12.6-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst'
+cache_dir="$RUNNER_TEMP/mt5700m-sdk-downloads/25.12.6-mediatek-filogic"
+printf 'damaged cached SDK\n' > "$cache_dir/$archive"
+export FAKE_ARIA2_FAIL=1 FAKE_CURL_FAIL_ONCE=1 FAKE_CURL_FAIL_MARK="$test_tmp/curl-failed-once"
+if ! bash "$test_repo/scripts/build-release.sh" > "$run_log" 2>&1; then fail 'damaged SDK cache recovery failed'; fi
+grep -q 'Cached SDK failed SHA256 verification' "$run_log" || fail 'damaged cache was not identified'
+grep -q 'Parallel SDK download failed; retrying with curl' "$run_log" || fail 'parallel download failure did not fall back to curl'
+grep -q 'SDK resume failed; retrying curl from the beginning' "$run_log" || fail 'curl failure did not restart the download'
+assert_equal "$(cat "$cache_dir/$archive")" 'fixture SDK 25.12.6 mediatek/filogic' 'damaged SDK was replaced with verified archive'
+[ ! -e "$cache_dir/$archive.part" ] && [ ! -e "$cache_dir/$archive.part.aria2" ] || fail 'parallel download leftovers were retained'
+unset FAKE_ARIA2_FAIL FAKE_CURL_FAIL_ONCE
+
+# A sequential partial from an interrupted curl download is resumed unchanged.
+rm -f "$cache_dir/$archive"
+printf 'fixture SDK 25.12.6' > "$cache_dir/$archive.part"
+parallel_count="$(grep -c $'^aria2\t' "$trace")"
+if ! bash "$test_repo/scripts/build-release.sh" > "$run_log" 2>&1; then fail 'partial SDK resume failed'; fi
+assert_equal "$(grep -c $'^aria2\t' "$trace")" "$parallel_count" 'curl partial did not start a new parallel download'
+assert_equal "$(grep -c $'^curl-resume\t' "$trace")" 1 'curl resumed the existing sequential prefix'
+assert_equal "$(cat "$cache_dir/$archive")" 'fixture SDK 25.12.6 mediatek/filogic' 'resumed SDK was verified before caching'
 
 # A mismatching SDK architecture must stop before either package compile.
 compile_count="$(grep -c $'^make\t.*\tpackage/' "$trace")"
@@ -258,8 +338,10 @@ unset FAKE_ARCH_OVERRIDE
 extract_count="$(grep -c $'^extract\t' "$trace")"
 export SDK_VERSION=25.12.6 SDK_TARGET=rockchip/armv8
 export FAKE_EXPECT_VERSION="$SDK_VERSION" FAKE_EXPECT_TARGET="$SDK_TARGET" FAKE_CORRUPT_ARCHIVE=1
+rm -f "$RUNNER_TEMP/mt5700m-sdk-downloads/25.12.6-rockchip-armv8/"*.tar.zst
 if bash "$test_repo/scripts/build-release.sh" > "$run_log" 2>&1; then fail 'corrupt SDK was accepted'; fi
 assert_equal "$(grep -c $'^extract\t' "$trace")" "$extract_count" 'corrupt SDK rejected before extraction'
+[ -z "$(find "$RUNNER_TEMP/mt5700m-sdk-downloads/25.12.6-rockchip-armv8" -type f -print -quit)" ] || fail 'corrupt SDK retained in download cache'
 unset FAKE_CORRUPT_ARCHIVE
 
 # Invalid targets must fail before downloads and before clearing existing output.
@@ -273,4 +355,4 @@ for invalid_target in rockchip mediatek/armv8 rockchip/armv8/extra ../rockchip/a
   assert_equal "$(sha256sum "$trace")" "$trace_before" 'invalid target failed before external commands'
 done
 
-printf 'PASS: offline SDK matrix, target config, architecture, isolation, checksums, APK signing and invalid-target safety\n'
+printf 'PASS: offline SDK matrix, verified archive cache, parallel download, curl fallback/resume/retry, target config, architecture, isolation, checksums, APK signing and invalid-target safety\n'

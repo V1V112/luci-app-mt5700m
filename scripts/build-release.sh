@@ -17,21 +17,69 @@ sdk_board="${sdk_target%/*}"
 sdk_subtarget="${sdk_target#*/}"
 target_id="${sdk_board}-${sdk_subtarget}"
 work_dir="${RUNNER_TEMP:-/tmp}/mt5700m-sdk-${sdk_version}-${target_id}"
+sdk_cache_dir="${SDK_DOWNLOAD_CACHE_DIR:-${RUNNER_TEMP:-/tmp}/mt5700m-sdk-downloads}/${sdk_version}-${target_id}"
 output_dir="${repo_dir}/dist-release"
 base_url="https://downloads.openwrt.org/releases/${sdk_version}/targets/${sdk_target}"
 
-mkdir -p "${work_dir}" "${output_dir}"
+mkdir -p "${work_dir}" "${sdk_cache_dir}" "${output_dir}"
+sdk_cache_dir="$(cd "${sdk_cache_dir}" && pwd)"
 find "${output_dir}" -mindepth 1 -maxdepth 1 -delete
 cd "${work_dir}"
-curl -fsSLO "${base_url}/sha256sums"
+printf 'Fetching official SDK checksums: %s\n' "${base_url}/sha256sums"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 --max-time 120 \
+  "${base_url}/sha256sums" -o sha256sums.tmp
+mv -f sha256sums.tmp sha256sums
 archive="$(awk -v prefix="openwrt-sdk-${sdk_version}-${target_id}_" '
   { name = $2; sub(/^\*/, "", name) }
   index(name, prefix) == 1 && name !~ /\// && name ~ /\.Linux-x86_64\.tar\.zst$/ { print name; exit }
 ' sha256sums)"
 test -n "${archive}"
-curl -fL --retry 5 "${base_url}/${archive}" -o "${archive}"
-grep "[ *]${archive}$" sha256sums | sha256sum -c -
-tar --zstd -xf "${archive}"
+checksum="$(awk -v archive="${archive}" '$2 == archive || $2 == "*" archive { print $1; exit }' sha256sums)"
+[[ "${checksum}" =~ ^[A-Fa-f0-9]{64}$ ]] || { printf 'Invalid official SDK checksum\n' >&2; exit 1; }
+archive_path="${sdk_cache_dir}/${archive}"
+partial_path="${archive_path}.part"
+verify_sdk() { printf '%s  %s\n' "${checksum}" "$1" | sha256sum -c -; }
+download_sdk() {
+  # A partial file without aria2 metadata is a sequential curl prefix.
+  if command -v aria2c >/dev/null 2>&1 && { [ ! -f "${partial_path}" ] || [ -f "${partial_path}.aria2" ]; }; then
+    printf 'Downloading SDK with four connections: %s\n' "${base_url}/${archive}"
+    if aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false \
+      --max-connection-per-server=4 --split=4 --min-split-size=20M --file-allocation=none \
+      --max-tries=5 --retry-wait=2 --connect-timeout=20 --timeout=60 --summary-interval=10 \
+      --dir="${sdk_cache_dir}" --out="${archive}.part" "${base_url}/${archive}"; then
+      return 0
+    fi
+    printf 'Parallel SDK download failed; retrying with curl.\n' >&2
+    # aria2 partial files may contain noncontiguous chunks; curl requires a prefix.
+    rm -f "${partial_path}" "${partial_path}.aria2"
+  fi
+  printf 'Downloading SDK with curl (resume and retries enabled): %s\n' "${base_url}/${archive}"
+  if curl -fL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
+    --speed-time 60 --speed-limit 1024 --continue-at - "${base_url}/${archive}" -o "${partial_path}"; then
+    return 0
+  fi
+  printf 'SDK resume failed; retrying curl from the beginning.\n' >&2
+  rm -f "${partial_path}"
+  curl -fL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 \
+    --speed-time 60 --speed-limit 1024 --continue-at - "${base_url}/${archive}" -o "${partial_path}"
+}
+if [ -f "${archive_path}" ] && verify_sdk "${archive_path}" >/dev/null 2>&1; then
+  printf 'Reusing cached SDK (official SHA256 verified): %s\n' "${archive_path}"
+else
+  if [ -f "${archive_path}" ]; then
+    printf 'Cached SDK failed SHA256 verification; downloading a replacement.\n' >&2
+    rm -f "${archive_path}" "${partial_path}" "${partial_path}.aria2"
+  fi
+  download_sdk
+  if ! verify_sdk "${partial_path}"; then
+    rm -f "${partial_path}" "${partial_path}.aria2"
+    exit 1
+  fi
+  mv -f "${partial_path}" "${archive_path}"
+  rm -f "${partial_path}.aria2"
+fi
+printf 'Extracting verified SDK: %s\n' "${archive}"
+tar --zstd -xf "${archive_path}"
 sdk_dir="${work_dir}/${archive%.tar.zst}"
 test -d "${sdk_dir}"
 
