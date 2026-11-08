@@ -2644,3 +2644,75 @@ msgstr "注册成功或接口连接不等于能上网；自动恢复设有冷却
 
 msgid "SMS storage is nearly full. Review and delete only messages you no longer need; existing messages are never deleted automatically."
 msgstr "短信存储空间即将用满。请检查并仅删除不再需要的短信；插件不会自动删除已有短信。"
+
+msgid "Download %s"
+msgstr "下载 %s"
+
+msgid "Upload %s"
+msgstr "上传 %s"
+
+msgid "Saved IP protocol"
+msgstr "已保存的 IP 协议"
+
+msgid "Module IP protocol (snapshot)"
+msgstr "模组 IP 协议（快照）"
+
+msgid "The module value is a cached AT readback, not the saved configuration. Refresh this page to read the latest available snapshot."
+msgstr "模组值来自 AT 回读缓存，与保存配置分别显示。刷新本页可读取最新可用快照。"
+
+msgid "The saved and module IP protocols differ. Change the saved protocol to match the module, or explicitly connect/redial to apply the saved profile."
+msgstr "保存协议与模组协议不一致。可修改保存协议与模组保持一致，或主动连接／重拨，将保存配置应用到模组。"
+
+msgid "The module protocol is unavailable; the saved value is not proof of the active protocol."
+msgstr "暂时无法确认模组协议；保存值不代表当前实际协议。"
+
+msgid "Connect and Redial apply the saved dialing profile to the module. Automatic recovery never rewrites the module dialing profile."
+msgstr "连接和重拨会将保存的拨号配置应用到模组；自动恢复不会重写模组拨号配置。"
+
+msgid "Saved connection settings"
+msgstr "已保存的连接设置"
+
+msgid "Negotiated USB link speed"
+msgstr "模组 USB 实际协商速率"
+
+msgid "480 Mbps (USB 2.0 High-Speed)"
+msgstr "480 Mbps（USB 2.0 高速）"
+
+msgid "Updated %s"
+msgstr "更新于 %s"
+
+msgid "Waiting for carrier snapshot…"
+msgstr "等待载波快照…"
+
+msgid "Network topology"
+msgstr "组网模式"
+
+msgid "Signal radio"
+msgstr "信号制式"
+
+msgid "Dual connectivity and aggregation"
+msgstr "双连接＋聚合"
+
+msgid "Not aggregating"
+msgstr "未聚合"
+
+msgid "Show refresh countdown"
+msgstr "显示刷新倒计时"
+
+msgid "No traffic history yet."
+msgstr "暂无流量历史。"
+
+msgid "Total %s"
+msgstr "合计 %s"
+
+msgid "Earlier records (%s days remaining)"
+msgstr "查看更早记录（还有 %s 天）"
+
+msgid "Show latest 7 days"
+msgstr "收起为最近 7 条"
+
+msgid "Earliest record: %s"
+msgstr "最早可用记录：%s"
+
+msgid "No valid uplink information"
+msgstr "无有效上行信息"

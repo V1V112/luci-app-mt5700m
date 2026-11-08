@@ -2,6 +2,7 @@
 
 CONFIG='mt5700m.settings'
 USB_HELPER="${MT5700M_USB_HELPER:-/usr/share/mt5700m/usb.sh}"
+READ_HELPER="${MT5700M_READ_HELPER:-/usr/sbin/mt5700m-read}"
 CELL_SCAN_DIR="${MT5700M_CELL_SCAN_DIR:-/tmp/mt5700m-cellscan}"
 READ_CACHE_DIR="${MT5700M_READ_CACHE_DIR:-/tmp/mt5700m-read-cache}"
 SMS_JOB_DIR="${MT5700M_SMS_JOB_DIR:-/tmp/mt5700m-sms-jobs}"
@@ -701,6 +702,13 @@ print_carrier_aggregation() {
 				ul_frequency = field[i + 5] / frequency_divisor
 				dl_bandwidth = field[i + 3] / 1000
 				ul_bandwidth = field[i + 6] / 1000
+				# Only complete NR records with both UL coordinates zero are invalid.
+				# LTE 1.4 MHz is legitimate; missing/malformed records are skipped above.
+				if (radio == "NR") {
+					ul_valid = (field[i + 4] + 0 != 0 || field[i + 5] + 0 != 0)
+					if (!ul_valid) ul_bandwidth = 0
+					printf "carrier_%d_ul_valid=%d\n", count, ul_valid
+				}
 				dl_total += dl_bandwidth
 				ul_total += ul_bandwidth
 				printf "carrier_%d=%s|%s|%s|%.2f|%.1f|%s|%.2f|%.1f\n", count,
@@ -1234,6 +1242,15 @@ cell_scan_result() {
 
 action="${1:-status}"
 case "${action}" in
+	signal)
+		# Low-priority live telemetry must never queue behind SMS or settings.
+		exec 9>"${MT5700M_ACTION_LOCK:-/var/lock/mt5700m-action.lock}" || exit 1
+		flock -n 9 || exit 75
+		export MT5700M_ACTION_LOCKED=1
+		timeout_s=1
+		print_signal
+		exit $?
+		;;
 	cellscan-status|cellscan-result|preview-lock|sms-send-worker|sms-send-status) ;;
 	*) mt5700m_action_lock || exit $? ;;
 esac
@@ -1262,6 +1279,7 @@ case "${action}" in
 			echo "usb_state=${usb_state}"
 			echo "usb_pid=${usb_rest%%|*}"
 			echo "usb_slot=${usb_rest#*|}"
+			usb_speed="$(mt5700m_usb_speed "${usb_rest#*|}" 2>/dev/null)" && echo "usb_speed_mbps=${usb_speed}"
 		else
 			echo 'usb_state=absent'
 		fi
@@ -1288,7 +1306,8 @@ case "${action}" in
 		print_identity
 		print_sim_operator
 		print_subscriber_number
-		print_signal
+		# The background producer owns signal sampling; full status reuses it too.
+		"${READ_HELPER}" signal 2>/dev/null || true
 		print_subscription_rate
 		print_carrier_aggregation
 		print_mcs
@@ -1302,9 +1321,12 @@ case "${action}" in
 		# This endpoint is polled by the overview page. Keep each read-only
 		# modem query short so a slow AT channel cannot accumulate refreshes.
 		[ "${timeout_s}" -le 2 ] || timeout_s=2
-		print_signal
+		# Reuse the collector's snapshot; a cold signal cache must not prevent
+		# fresh carrier and MCS reads or trigger a second live signal producer.
+		"${READ_HELPER}" signal 2>/dev/null || true
 		print_carrier_aggregation
 		print_mcs
+		printf 'snapshot_at=%s\n' "$(date +%s)"
 		;;
 	command)
 		shift

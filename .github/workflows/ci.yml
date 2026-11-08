@@ -9,6 +9,30 @@ permissions:
   contents: read
 
 jobs:
+  typography-browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned browser test runtime
+        run: |
+          npm install --no-save --package-lock=false --ignore-scripts playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Fetch pinned Argon CSS fixtures
+        run: |
+          mkdir -p "$RUNNER_TEMP/argon"
+          for name in cascade.css dark.css; do
+            curl -fL --retry 3 "https://raw.githubusercontent.com/jerrykuku/luci-theme-argon/9f5d1e79e67623f4006a86471116b6745ea845f7/htdocs/luci-static/argon/css/$name" -o "$RUNNER_TEMP/argon/$name"
+          done
+      - name: Validate rendered typography and responsive views
+        env:
+          MT5700M_DOM_DIR: ${{ runner.temp }}/mt5700m-dom
+          ARGON_CSS_DIR: ${{ runner.temp }}/argon
+        run: |
+          node tests/test-ux.js
+          node tests/test-typography-browser.js
   static-checks:
     runs-on: ubuntu-latest
     steps:
@@ -18,6 +42,9 @@ jobs:
       - name: Check shell syntax and USB detection
         run: |
           sh -n luci-app-mt5700m/root/etc/hotplug.d/usb/60-mt5700m
+          sh -n luci-app-mt5700m/root/usr/sbin/mt5700m-signal
+          sh -n luci-app-mt5700m/root/etc/init.d/mt5700m-signal
+          sh -n luci-app-mt5700m/root/etc/uci-defaults/93-mt5700m-signal
           sh -n luci-app-mt5700m/root/etc/init.d/mt5700m-manager
           sh -n luci-app-mt5700m/root/etc/init.d/mt5700m-traffic
           sh -n luci-app-mt5700m/root/etc/hotplug.d/net/95-mt5700m-traffic
@@ -30,6 +57,9 @@ jobs:
           sh -n luci-app-mt5700m/root/usr/sbin/mt5700m-read
           sh -n luci-app-mt5700m/root/usr/sbin/mt5700m-traffic
           sh -n luci-app-mt5700m/root/usr/share/mt5700m/usb.sh
+          sh -n luci-app-mt5700m/root/usr/share/mt5700m/session.sh
+          sh -n luci-app-mt5700m/root/usr/share/mt5700m/health.sh
+          sh -n luci-app-mt5700m/root/usr/share/mt5700m/profile.sh
           sh luci-app-mt5700m/tests/test-usb-detection.sh
           sh luci-app-mt5700m/tests/test-temperature-cache.sh
           sh luci-app-mt5700m/tests/test-network-policy.sh
@@ -46,8 +76,11 @@ jobs:
           TRANSPORT_BIN=/tmp/mt5700m-transport-test python3 mt5700m-transport/tests/test_transport.py -v
       - name: Check executable service files
         run: |
-          test -x luci-app-mt5700m/root/usr/sbin/mt5700m-traffic
+          test -x luci-app-mt5700m/root/usr/sbin/mt5700m-signal
+          test -x luci-app-mt5700m/root/etc/init.d/mt5700m-signal
+          test -x luci-app-mt5700m/root/etc/uci-defaults/93-mt5700m-signal
           test -x luci-app-mt5700m/root/usr/sbin/mt5700m-read
+          test -x luci-app-mt5700m/root/usr/sbin/mt5700m-traffic
           test -x luci-app-mt5700m/root/usr/libexec/rpcd/mt5700m-traffic
           test -x luci-app-mt5700m/root/etc/init.d/mt5700m-traffic
           test -x luci-app-mt5700m/root/etc/hotplug.d/net/95-mt5700m-traffic
@@ -57,10 +90,19 @@ jobs:
       - name: Check UI failure handling and SMS decoding
         run: |
           node tests/test-ui-errors.js
+          node tests/test-ui-layout.js
+          node tests/test-profile-ui.js
+          sh tests/test-profile-drift.sh
+          node tests/test-signal-ui.js
+          node tests/test-ux.js
+          sh tests/test-signal-collector.sh
+          sh tests/test-monitor-telemetry.sh
           node tests/test-sms-decode.js
           sh tests/test-action-lock.sh
           sh tests/test-sms-jobs.sh
           sh tests/test-health.sh
+          sh tests/test-health-probe.sh
+          sh tests/test-session.sh
           sh tests/test-profile-rollback.sh
           node tests/test-sms-ui.js
       - name: Validate JSON metadata
