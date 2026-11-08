@@ -39,6 +39,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install validation tools
         run: sudo apt-get update && sudo apt-get install -y gettext
+      - name: Check SDK build targets and packaging
+        run: |
+          bash -n scripts/build-release.sh
+          bash tests/test-build-release.sh
       - name: Check shell syntax and USB detection
         run: |
           sh -n luci-app-mt5700m/root/etc/hotplug.d/usb/60-mt5700m

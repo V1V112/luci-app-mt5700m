@@ -13,12 +13,18 @@ jobs:
   validate:
     uses: ./.github/workflows/ci.yml
   build:
+    name: OpenWrt ${{ matrix.sdk }} / ${{ matrix.target.board }}/${{ matrix.target.subtarget }}
     needs: validate
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         sdk: ['24.10.8', '25.12.6']
+        target:
+          - board: mediatek
+            subtarget: filogic
+          - board: rockchip
+            subtarget: armv8
     steps:
       - uses: actions/checkout@v7
       - name: Prepare release filename
@@ -40,15 +46,16 @@ jobs:
       - name: Build with the official OpenWrt SDK
         env:
           SDK_VERSION: ${{ matrix.sdk }}
+          SDK_TARGET: ${{ matrix.target.board }}/${{ matrix.target.subtarget }}
         run: ./scripts/build-release.sh
       - name: Archive this SDK build
         run: |
           mkdir -p release-assets
-          tar -czf release-assets/${{ steps.artifact.outputs.name }}-openwrt-${{ matrix.sdk }}-mediatek-filogic.tar.gz -C dist-release .
-          (cd release-assets && sha256sum *.tar.gz > mt5700m-openwrt-${{ matrix.sdk }}.sha256)
+          tar -czf release-assets/${{ steps.artifact.outputs.name }}-openwrt-${{ matrix.sdk }}-${{ matrix.target.board }}-${{ matrix.target.subtarget }}.tar.gz -C dist-release .
+          (cd release-assets && sha256sum *.tar.gz > mt5700m-openwrt-${{ matrix.sdk }}-${{ matrix.target.board }}-${{ matrix.target.subtarget }}.sha256)
       - uses: actions/upload-artifact@v7
         with:
-          name: mt5700m-${{ matrix.sdk }}
+          name: mt5700m-${{ matrix.sdk }}-${{ matrix.target.board }}-${{ matrix.target.subtarget }}
           path: release-assets/*
           if-no-files-found: error
   publish:

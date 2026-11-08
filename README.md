@@ -1,7 +1,7 @@
 # MT5700M Manager for OpenWrt
 
-[![CI](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/ci.yml/badge.svg)](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/ci.yml)
-[![Build Release](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/release.yml/badge.svg)](https://github.com/FAN789/luci-app-mt5700m/actions/workflows/release.yml)
+[![CI](https://github.com/V1V112/luci-app-mt5700m/actions/workflows/ci.yml/badge.svg)](https://github.com/V1V112/luci-app-mt5700m/actions/workflows/ci.yml)
+[![Build Release](https://github.com/V1V112/luci-app-mt5700m/actions/workflows/release.yml/badge.svg)](https://github.com/V1V112/luci-app-mt5700m/actions/workflows/release.yml)
 
 面向鼎桥（TD Tech）MT5700M-CN 5G 模组的 OpenWrt LuCI 管理插件。
 当前版本 **v3.0.15**，应用 `3.0.15-r1`，原生传输程序 `1.0.1-r1`。
@@ -132,10 +132,16 @@ H5000M + KWRT（Linux 6.12.108）实机已验证 AT 查询、管理服务自启�
 
 ## 安装
 
-在 [Releases](https://github.com/FAN789/luci-app-mt5700m/releases) 下载对应构建的归档并核对 SHA256。
-自动构建提供 `mediatek/filogic` 的两套独立产物：OpenWrt 24.10.8 SDK 的 IPK，以及 25.12.6 SDK 的 APK。
+在 [Releases](https://github.com/V1V112/luci-app-mt5700m/releases) 下载对应构建的归档并核对 SHA256。
+自动构建提供以下四套独立产物，每个平台均有 OpenWrt 24.10.8 SDK 的 IPK 和 25.12.6 SDK 的 APK：
+
+| 平台 | SDK 目标 | 原生传输包架构 | 归档名称中的平台标识 |
+| --- | --- | --- | --- |
+| MediaTek Filogic（如 MT7981） | `mediatek/filogic` | `aarch64_cortex-a53` | `mediatek-filogic` |
+| Rockchip RK3568A / RK3568 | `rockchip/armv8` | `aarch64_generic` | `rockchip-armv8` |
+
 每套包含应用、简体中文包、`mt5700m-transport` 和校验文件；APK 构建另附签名公钥。
-原生传输包面向 `aarch64_cortex-a53`；LuCI 页面虽为架构无关包，仍依赖匹配的原生传输包。
+LuCI 页面虽为架构无关包，仍依赖匹配的原生传输包。RK3568A 使用官方 [Rockchip 64 位目标](https://downloads.openwrt.org/releases/25.12.6/targets/rockchip/armv8/) 构建；定制固件请核对 `opkg print-architecture` 或 `apk --print-arch`，CPU 型号相同不代表包架构、libc 和依赖版本一致。
 
 1. 备份配置，确认设备架构、libc/用户空间 ABI 和包管理器。不要同时安装 IPK/APK，不要强制跳过依赖。
 2. 从**当前固件的软件源**安装 USB 驱动：`kmod-usb3`、`kmod-usb-serial`、`kmod-usb-serial-option`、`kmod-usb-net`、`kmod-usb-net-cdc-ether`、`kmod-usb-net-cdc-ncm`。不得跨内核复制驱动。
@@ -148,7 +154,7 @@ KWRT 等衍生固件可能保留不同包格式/依赖版本，不能仅凭版�
 ## 源码编译与自动发布
 
 ```sh
-git clone https://github.com/FAN789/luci-app-mt5700m.git
+git clone https://github.com/V1V112/luci-app-mt5700m.git
 cp -a luci-app-mt5700m/luci-app-mt5700m /path/to/openwrt/package/
 cp -a luci-app-mt5700m/mt5700m-transport /path/to/openwrt/package/
 cd /path/to/openwrt
@@ -159,7 +165,19 @@ make package/luci-app-mt5700m/compile V=s
 ```
 
 推送与 PR 运行 CI；推送匹配应用版本的 `v*` 标签会先执行测试，再通过官方 SDK 自动编译并发布 Release。
-手动运行 Build Release 只保存 Actions 产物，不创建版本。SDK 下载校验和及构建信息随产物保留；签名私钥不发布。
+手动运行 [Build Release](https://github.com/V1V112/luci-app-mt5700m/actions/workflows/release.yml) 只保存 Actions 产物，不创建版本。SDK 下载校验和及构建信息随产物保留；签名私钥不发布。
+
+在 Linux x86_64 构建机安装与工作流相同的依赖后，可单独构建 RK3568A 的两种包格式：
+
+```sh
+# IPK
+SDK_VERSION=24.10.8 SDK_TARGET=rockchip/armv8 bash scripts/build-release.sh
+# APK
+SDK_VERSION=25.12.6 SDK_TARGET=rockchip/armv8 bash scripts/build-release.sh
+```
+
+每次构建输出到 `dist-release/` 并替换其中的上一次产物，连续构建前请先保存需要的文件。省略 `SDK_TARGET` 时仍构建 `mediatek/filogic`。GitHub Actions 的 Build Release 会分别归档四组产物，文件名、校验文件及构建记录均包含目标平台；无需为 RK3568A 改动模组管理代码。
+
 `scripts/build-native-preview.py` 仅用于本地实验包，不能替代 SDK 正式构建与目标系统验收。
 
 ## 来源与许可
